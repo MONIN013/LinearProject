@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.14">
+  <Task Name="PlcTask" Id="{736ef15d-928f-44a3-b4aa-0c0d46134995}">
+    <!--CycleTime in micro seconds.-->
+    <CycleTime>250</CycleTime>
+    <Priority>21</Priority>
+    <PouCall>
+      <Name>PRG_ExperimentSequencer</Name>
+    </PouCall>
+    <PouCall>
+      <Name>PRG_ExperimentLogger</Name>
+    </PouCall>
+    <TaskFBGuid>{5a6d7161-c1d9-49a3-8e55-a13f03173966}</TaskFBGuid>
+    <Fb_init>{acd69a76-dc55-443d-9558-5ec9a0288ceb}</Fb_init>
+    <Fb_exit>{a5898030-859a-45b3-b118-3037ba687d6a}</Fb_exit>
+    <CycleUpdate>{df40584c-b910-4db7-ad40-863af495f41c}</CycleUpdate>
+    <PostCycleUpdate>{bbfa81d3-7148-42f4-a1c3-60719d6c1c99}</PostCycleUpdate>
+  </Task>
+</TcPlcObject>

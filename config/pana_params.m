@@ -9,6 +9,5 @@ OPERATION_MODE = 10; % Cyclic synchronous torque mode
 MAX_FORCE = 2000;
 MAX_SPEED = 10000;
 
-
 configRoot = fileparts(mfilename("fullpath"));
 save(fullfile(configRoot, "data", "pana_params.mat"))

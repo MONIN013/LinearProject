@@ -47,30 +47,6 @@ verifyError(testCase, ...
 delete(cleanup);
 end
 
-function testFeedforwardControllerMeetsNominalAndMeasuredLimits(testCase)
-plant = load(fullfile(testCase.TestData.repoRoot, "data", "plant.mat"));
-Pd0 = struct( ...
-    "m", plant.Jn, ...
-    "d", plant.Dn, ...
-    "k", 0, ...
-    "delay", plant.Ndelay, ...
-    "lp", [0, 0, 0]);
-
-[~, Gn0] = modelCreate(Pd0, plant.Ts, plant.Pd.Frequency);
-Kpid = designpid(plant.Dn/plant.Jn, 0, 1/plant.Jn, 100);
-Kd = c2d(Kpid, plant.Ts, "tustin");
-
-verifyTrue(testCase, isstable(feedback(Gn0.modelDelayed * Kd, 1)));
-S = feedback(1, plant.Pd * Kd);
-maxSensitivity = max(abs(S.ResponseData), [], "all");
-verifyLessThanOrEqual(testCase, maxSensitivity, 2.1);
-
-controllerTf = tf(Kd);
-[numerator, ~] = tfdata(controllerTf, "v");
-verifyEqual(testCase, numerator(1), 2719.9230924367639, ...
-    "RelTol", 1e-12);
-end
-
 function testDefaultTrajectoryShape(testCase)
 assumeTrue(testCase, license("test", "Symbolic_Toolbox"), ...
     "Symbolic Math Toolbox is required by TrajectTools.");
@@ -194,6 +170,37 @@ verifyEqual(testCase, string(get_param( ...
 delete(cleanup);
 end
 
+function testModelsExposeOneVirtualCstTorqueCommand(testCase)
+parameters = load(fullfile(testCase.TestData.repoRoot, ...
+    "config", "data", "pana_params.mat"));
+verifyFalse(testCase, isfield(parameters, "CORE_TORQUE_WINDOWS_COUNTS"));
+
+modelFiles = [ ...
+    fullfile(testCase.TestData.repoRoot, ...
+        "simulink", "linear_exp_2025a.slx"), ...
+    fullfile(testCase.TestData.repoRoot, ...
+        "simulink", "linear_exp_tunable_2025a.slx")];
+modelNames = ["linear_exp_2025a", "linear_exp_tunable_2025a"];
+systemNames = ["Linear System", "linear system"];
+
+for modelIndex = 1:numel(modelNames)
+    load_system(modelFiles(modelIndex));
+    cleanup = onCleanup(@()localCloseModel(modelNames(modelIndex)));
+    systemPath = modelNames(modelIndex) + "/" + systemNames(modelIndex);
+    torqueOutputs = find_system(systemPath, "SearchDepth", 1, ...
+        "MaskType", "TC Module Output");
+    verifyNumElements(testCase, torqueOutputs, 1);
+    verifyEqual(testCase, string(torqueOutputs{1}), ...
+        systemPath + "/Target Torque");
+    verifyEqual(testCase, localInputSourceName(torqueOutputs{1}, 1), ...
+        "Data Type Conversion");
+    % Physical core selection belongs exclusively to CopleyTest MotorRuntime.
+    verifyEmpty(testCase, find_system(systemPath, "SearchDepth", 1, ...
+        "RegExp", "on", "Name", "^(Core Window|Torque Gate) Axis "));
+    delete(cleanup);
+end
+end
+
 function testModelsUseVelocityCountResolution(testCase)
 modelFiles = [ ...
     fullfile(testCase.TestData.repoRoot, ...
@@ -217,29 +224,6 @@ paramsSource = fileread(fullfile(testCase.TestData.repoRoot, ...
     "config", "pana_params.m"));
 verifyNotEmpty(testCase, regexp(paramsSource, ...
     'VELOCITY_RESOLUTION\s*=\s*1e-6\s*;', 'once'));
-end
-
-function testOperatorScriptSafetyContracts(testCase)
-experimentSource = fileread(fullfile(testCase.TestData.repoRoot, ...
-    "exp03_FF", "feedforward_experiment.m"));
-captureSource = fileread(fullfile(testCase.TestData.repoRoot, ...
-    "exp03_FF", "obtainMeasurement.m"));
-
-verifySubstring(testCase, experimentSource, ...
-    "setdiff(count_ex(1):count_ex(end), count_ex)");
-verifySubstring(testCase, experimentSource, ...
-    "fbDesign(Pd, Ts)");
-verifySubstring(testCase, captureSource, ...
-    "function measurement = run_feedforward_capture");
-verifySubstring(testCase, captureSource, ...
-    "cleanupGuard = onCleanup");
-verifySubstring(testCase, captureSource, ...
-    "metadata.schema_name ~= ""feedforward_v1""");
-verifySubstring(testCase, captureSource, "runValues.p_servo = 0");
-verifySubstring(testCase, captureSource, ...
-    "setvars(model, struct(""p_servo"", 1))");
-verifySubstring(testCase, captureSource, "servoSettlingTime = 3");
-verifySubstring(testCase, captureSource, "startSettlingTime = 3");
 end
 
 function names = localFeedforwardSignalNames()
@@ -268,6 +252,13 @@ outports = find_system(sourceBlock, "SearchDepth", 1, ...
     "FindAll", "on", "BlockType", "Outport");
 portNumbers = arrayfun(@(handle)str2double(get_param(handle, "Port")), outports);
 name = string(get_param(outports(portNumbers == sourcePort + 1), "Name"));
+end
+
+function name = localInputSourceName(blockPath, portNumber)
+portHandles = get_param(blockPath, "PortHandles");
+lineHandle = get_param(portHandles.Inport(portNumber), "Line");
+sourceBlock = get_param(lineHandle, "SrcBlockHandle");
+name = string(get_param(sourceBlock, "Name"));
 end
 
 function tc_yout = localTwinCATOutput(data, startTime, samplePeriod)

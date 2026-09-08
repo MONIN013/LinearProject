@@ -1,0 +1,23 @@
+{
+  "connection": {
+    "amsNetId": "192.168.10.3.1.1",
+    "sequencerAdsPort": 851,
+    "motorAdsPort": 852,
+    "loggerAdsPort": 851,
+    "timeout_s": 5.0,
+    "dryRun": true
+  },
+  "baseDir": "data/commissioning",
+  "plan": {
+    "lease_id": 1,
+    "tau_e_m": 0.036,
+    "x_ref_m": 0.0,
+    "q_axis_sign": 1,
+    "electrical_angle_sign": 1,
+    "calibration_version": 2,
+    "position_raw_zero": 0,
+    "position_zero_m": 0.0,
+    "position_m_per_count": 1E-07,
+    "velocity_mps_per_count": 1E-06
+  }
+}

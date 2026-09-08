@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="PRG_MotorRuntime" Id="{9f95b821-e6f9-4e51-98dd-900047a03003}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM PRG_MotorRuntime
+VAR
+    fbMotor : FB_MotorRuntimeKernel;
+    fbArbiter : FB_MotorCommandArbiter;
+    fbIoWatchdog : FB_MotorIoWatchdog;
+
+    encoderPositionRaw        AT %I* : ULINT;
+    encoderReady              AT %I* : BOOL;
+    encoderError              AT %I* : BOOL;
+    encoderTxPdoState         AT %I* : BOOL;
+    encoderWcState            AT %I* : BOOL;
+    encoderInputToggle        AT %I* : BOOL;
+    copleyWcState             AT %I* : BOOL;
+    copleyInputToggle         AT %I* : BOOL;
+    copleyWcStateDrive2       AT %I* : BOOL;
+    copleyInputToggleDrive2   AT %I* : BOOL;
+    copleyStatusWordModule1         AT %I* : WORD;
+    copleyActualCurrentCountModule1 AT %I* : INT;
+    copleyStatusWordModule2         AT %I* : WORD;
+    copleyActualCurrentCountModule2 AT %I* : INT;
+    copleyStatusWordModule3         AT %I* : WORD;
+    copleyActualCurrentCountModule3 AT %I* : INT;
+    copleyStatusWordModule4         AT %I* : WORD;
+    copleyActualCurrentCountModule4 AT %I* : INT;
+
+    copleyControlWordModule1      AT %Q* : WORD;
+    copleyTargetTorqueModule1     AT %Q* : INT;
+    copleyCommutationAngleModule1 AT %Q* : UINT;
+    copleyControlWordModule2      AT %Q* : WORD;
+    copleyTargetTorqueModule2     AT %Q* : INT;
+    copleyCommutationAngleModule2 AT %Q* : UINT;
+    copleyControlWordModule3      AT %Q* : WORD;
+    copleyTargetTorqueModule3     AT %Q* : INT;
+    copleyCommutationAngleModule3 AT %Q* : UINT;
+    copleyControlWordModule4      AT %Q* : WORD;
+    copleyTargetTorqueModule4     AT %Q* : INT;
+    copleyCommutationAngleModule4 AT %Q* : UINT;
+
+    copleyStatusWord         : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF WORD;
+    copleyActualCurrentCount : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF INT;
+    encoderPositionActualRaw : DINT;
+    encoderVelocityActualRaw : DINT;
+    previousEncoderPositionRaw : DINT;
+    encoderPositionInitialized : BOOL;
+    taskIndex                  : DINT;
+    cycleTime100ns             : UDINT;
+    taskPeriod_s               : LREAL := 0.00025;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[taskIndex := GETCURTASKINDEXEX();
+IF taskIndex > 0 THEN
+    cycleTime100ns := TwinCAT_SystemInfoVarList._TaskInfo[taskIndex].CycleTime;
+    IF cycleTime100ns > 0 THEN
+        taskPeriod_s := UDINT_TO_LREAL(cycleTime100ns) * 1.0E-7;
+    END_IF
+END_IF
+
+encoderPositionActualRaw := ULINT_TO_DINT(encoderPositionRaw);
+IF encoderPositionInitialized THEN
+    // Position is 0.1 um/count; velocity is published in 1 um/s/count.
+    encoderVelocityActualRaw := LREAL_TO_DINT(
+        DINT_TO_LREAL(encoderPositionActualRaw - previousEncoderPositionRaw)
+        * 0.1 / taskPeriod_s);
+ELSE
+    encoderVelocityActualRaw := 0;
+    encoderPositionInitialized := TRUE;
+END_IF
+previousEncoderPositionRaw := encoderPositionActualRaw;
+
+copleyStatusWord[1] := copleyStatusWordModule1;
+copleyActualCurrentCount[1] := copleyActualCurrentCountModule1;
+copleyStatusWord[2] := copleyStatusWordModule2;
+copleyActualCurrentCount[2] := copleyActualCurrentCountModule2;
+copleyStatusWord[3] := copleyStatusWordModule3;
+copleyActualCurrentCount[3] := copleyActualCurrentCountModule3;
+copleyStatusWord[4] := copleyStatusWordModule4;
+copleyActualCurrentCount[4] := copleyActualCurrentCountModule4;
+
+fbArbiter(
+    NormalCommand := GVL_MotorRuntime.Command,
+    CommissioningCommand := GVL_MotorRuntimeInternal.CommissioningCommand,
+    CommutationOverride := GVL_MotorRuntimeInternal.CommutationOverride);
+
+fbMotor(
+    Command := fbArbiter.SelectedCommand,
+    CommutationOverride := fbArbiter.SelectedCommutationOverride,
+    RegisteredReferenceValid := GVL_MotorRuntimeInternal.RegisteredReferenceValid,
+    RegisteredReference := GVL_MotorRuntimeInternal.RegisteredReference,
+    CommissioningReference := GVL_MotorRuntimeInternal.CommissioningReference,
+    EncoderPositionActualRaw := encoderPositionActualRaw,
+    EncoderVelocityActualRaw := encoderVelocityActualRaw,
+    CopleyStatusWord := copleyStatusWord,
+    CopleyActualCurrentCount := copleyActualCurrentCount);
+
+fbIoWatchdog(
+    TaskPeriod_s := taskPeriod_s,
+    EncoderWcState := encoderWcState,
+    EncoderInputToggle := encoderInputToggle,
+    EncoderReady := encoderReady,
+    EncoderError := encoderError,
+    EncoderTxPdoState := encoderTxPdoState,
+    CopleyWcState := copleyWcState,
+    CopleyInputToggle := copleyInputToggle,
+    Copley2WcState := copleyWcStateDrive2,
+    Copley2InputToggle := copleyInputToggleDrive2,
+    ResetRequest :=
+        GVL_MotorRuntimeInternal.IoWatchdogResetRequest
+        AND (fbArbiter.CommissioningActive
+             OR NOT fbArbiter.CommissioningActive),
+    CommandIsZero :=
+        (fbArbiter.SelectedCommand.ControlWord = WORD#16#0000)
+        AND (fbArbiter.SelectedCommand.TargetTorque = 0));
+// Consume the operator acknowledgement as a one-cycle request. Keeping it
+// separate from the command prevents automatic re-arm after communication
+// recovers while an idle 0/0 command happens to be present.
+GVL_MotorRuntimeInternal.IoWatchdogResetRequest := FALSE;
+
+GVL_MotorRuntime.Status := fbMotor.Status;
+GVL_MotorRuntimeInternal.Feedback := fbMotor.Feedback;
+IF (fbArbiter.CommissioningActive OR NOT fbArbiter.CommissioningActive)
+   AND fbIoWatchdog.Fault THEN
+    GVL_MotorRuntimeInternal.Feedback.fault_id := fbIoWatchdog.FaultId;
+END_IF
+
+IF (fbArbiter.CommissioningActive OR NOT fbArbiter.CommissioningActive)
+   AND fbIoWatchdog.SafeToDrive THEN
+    copleyControlWordModule1 := fbMotor.CopleyControlWord[1];
+    copleyTargetTorqueModule1 := fbMotor.CopleyTargetTorque[1];
+    copleyCommutationAngleModule1 := fbMotor.CopleyCommutationAngle[1];
+    copleyControlWordModule2 := fbMotor.CopleyControlWord[2];
+    copleyTargetTorqueModule2 := fbMotor.CopleyTargetTorque[2];
+    copleyCommutationAngleModule2 := fbMotor.CopleyCommutationAngle[2];
+    copleyControlWordModule3 := fbMotor.CopleyControlWord[3];
+    copleyTargetTorqueModule3 := fbMotor.CopleyTargetTorque[3];
+    copleyCommutationAngleModule3 := fbMotor.CopleyCommutationAngle[3];
+    copleyControlWordModule4 := fbMotor.CopleyControlWord[4];
+    copleyTargetTorqueModule4 := fbMotor.CopleyTargetTorque[4];
+    copleyCommutationAngleModule4 := fbMotor.CopleyCommutationAngle[4];
+ELSE
+    // This is the final gate before the physical PDO outputs. It remains
+    // effective even if the TcCOM controller continues to request torque.
+    copleyControlWordModule1 := WORD#16#0000;
+    copleyTargetTorqueModule1 := 0;
+    copleyCommutationAngleModule1 := 0;
+    copleyControlWordModule2 := WORD#16#0000;
+    copleyTargetTorqueModule2 := 0;
+    copleyCommutationAngleModule2 := 0;
+    copleyControlWordModule3 := WORD#16#0000;
+    copleyTargetTorqueModule3 := 0;
+    copleyCommutationAngleModule3 := 0;
+    copleyControlWordModule4 := WORD#16#0000;
+    copleyTargetTorqueModule4 := 0;
+    copleyCommutationAngleModule4 := 0;
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

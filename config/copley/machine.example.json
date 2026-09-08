@@ -1,0 +1,16 @@
+{
+  "machine_profile": "copley_bissc_100nm",
+  "constants": {
+    "tau_e_m": 0.036,
+    "x_ref_m": 0.0,
+    "q_axis_sign": 1,
+    "electrical_angle_sign": 1,
+    "position_zero_m": 0.0,
+    "position_m_per_count": 0.0000001,
+    "velocity_mps_per_count": 0.000001,
+    "i_rated_A": 2.0,
+    "target_torque_A_per_1000": 0.1,
+    "actual_current_A_per_1000": 0.1,
+    "task_period_s": 0.00025
+  }
+}

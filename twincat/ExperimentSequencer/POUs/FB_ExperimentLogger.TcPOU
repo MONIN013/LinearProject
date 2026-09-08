@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ExperimentLogger" Id="{9f95b821-e6f9-4e51-98dd-900047a05002}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ExperimentLogger
+VAR_INPUT
+    Control       : DUT_LoggerControl;
+    Context       : DUT_SequencerContext;
+    MotorFeedback : DUT_MotorFeedbackSnapshot;
+END_VAR
+VAR_IN_OUT
+    Buffer        : ARRAY[0..819999] OF DUT_LoggerSample;
+END_VAR
+VAR_OUTPUT
+    SampleCount   : UDINT;
+    Overflow      : BOOL;
+END_VAR
+VAR
+    sample        : DUT_LoggerSample;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF Control.reset THEN
+    SampleCount := 0;
+    Overflow := FALSE;
+    RETURN;
+END_IF
+
+IF Control.capture_enable AND NOT Overflow THEN
+    IF SampleCount < GVL_ExperimentLogger.LOG_CAPACITY THEN
+        sample.sample_index := SampleCount;
+        sample.protocol_id := Context.protocol_id;
+        sample.phase_id := Context.phase_id;
+        sample.angle_index := Context.angle_index;
+        sample.protocol2_local_sample_index := Context.protocol2_local_sample_index;
+        sample.t_cycle_s := Context.t_cycle_s;
+        sample.experiment_angle_rad := Context.experiment_angle_rad;
+        sample.x_ref_traj_m := Context.x_ref_traj_m;
+        sample.iq_cmd_count_req_lreal := Context.iq_cmd_count_req_lreal;
+        sample.target_current_count_lreal := Context.target_current_count_lreal;
+        sample.encoder_position_raw := MotorFeedback.encoder_position_raw;
+        sample.encoder_velocity_raw := MotorFeedback.encoder_velocity_raw;
+        sample.copley_actual_current_count := MotorFeedback.copley_actual_current_count;
+        sample.output_torque_count := MotorFeedback.output_torque_count;
+        IF MotorFeedback.fault_id <> 0 THEN
+            sample.fault_id := MotorFeedback.fault_id;
+        ELSE
+            sample.fault_id := Context.fault_id;
+        END_IF
+        Buffer[TO_DINT(SampleCount)] := sample;
+        SampleCount := SampleCount + 1;
+    ELSE
+        Overflow := TRUE;
+    END_IF
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

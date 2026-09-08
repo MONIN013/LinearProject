@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="GVL_MotorRuntime" Id="{9f95b821-e6f9-4e51-98dd-900047a03001}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+    // The complete public virtual-CST boundary.
+    Command AT %I* : DUT_MotorDriverCommand;
+    Status  AT %Q* : DUT_MotorDriverStatus;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

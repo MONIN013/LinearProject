@@ -4,9 +4,9 @@
 %[text] external target and must be run by the experiment operator.
 %[text] ## 1. Load settings and design the feedback controller
 clear; close all;
-run("config/config_tunable.m");
-projectRoot = pwd;
-load("config/data/pana_params.mat");
+projectRoot = fileparts(fileparts(mfilename("fullpath")));
+run(fullfile(projectRoot, "config", "config_tunable.m"));
+load(fullfile(projectRoot, "config", "data", "pana_params.mat"));
 [plant, plantPath] = load_experiment_plant( ...
     projectRoot, plantDataFile, Ts);
 Pd = plant.Pd;
@@ -82,7 +82,7 @@ nexttile; plot(t, traj.vel); title("Velocity"); grid on; %[output:72529096]
 xlabel("Time [s]"); ylabel("Velocity [m/s]"); %[output:72529096]
 %%
 %[text] ## Feedforward gains
-%[text] These gains are experiment calibration knobs. Keep the zero values to reproduce the current acceleration-only feedforward input.
+%[text] These gains are experiment calibration knobs. Keep all gains zero for the feedback-only baseline; use Kfa for acceleration feedforward.
 Kfj = 0;
 Kfa = 0;
 Kfv = 0;
@@ -96,8 +96,9 @@ f = [f(1+Ndelay:end); repmat(f(end), Ndelay, 1)];
 run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m")); %[output:45698547] %[output:3768e1b6] %[output:39a74fae]
 %%
 %[text] ## 4. Run the experiment
-%[text] **Operator action:** this section connects to external mode, enables the servo, moves the stage, and deletes existing `simulink/data/measurement\_\*.mat` parts before capture.
-open(ModelName)
+%[text] **Operator action:** this section connects to external mode, enables the servo, moves the stage, and archives prior staged measurement parts before capture.
+open(fullfile(projectRoot, ModelName))
+[~, homing] = home_to_start(54100000);
 run(fullfile(projectRoot, "exp03_FF", "obtainMeasurement.m")); %[output:55d50f92]
 %%
 
@@ -131,13 +132,12 @@ end
 % Set specialTag = "only" manually for a position-dependent-only run.
 
 fileName = sprintf("V%.3f_%s_Result", v_max, specialTag);
-my_save_mat(fileName, ... %[output:group:90665e0e] %[output:95c552b7]
-    "t_ex", "r", "y_ex", "e_ex", "u_ex", "v_ex", "ff_ex", ... %[output:95c552b7]
-    "y_absolute_ex", "Kd", "r_ex", "Ts", "plantPath"); %[output:group:90665e0e] %[output:95c552b7]
+feedforwardResult = struct("t_ex", t_ex, "r", r, "y_ex", y_ex, ...
+    "e_ex", e_ex, "u_ex", u_ex, "v_ex", v_ex, "ff_ex", ff_ex, ...
+    "y_absolute_ex", y_absolute_ex, "Kd", Kd, "r_ex", r_ex, ...
+    "Ts", Ts, "plantPath", plantPath, "homing", homing);
+save_experiment_result(runDir, fileName, feedforwardResult); %[output:group:90665e0e] %[output:95c552b7]
 
-% my_save_mat(fileName, ...
-%     "t_ex", "r", "y_ex", "e_ex", "u_ex", "v_ex", "ff_ex", ...
-%     "y_absolute_ex", "Kd", "r_ex", "Ts", "plantPath");
 %%
 %[text] ## 5. Inspect the current result
 figure; %[output:04081e31]
@@ -153,17 +153,21 @@ legend("FF", "FB"); %[output:04081e31]
 linkaxes(findall(gcf, "Type", "axes"), "x"); %[output:04081e31]
 
 fprintf("Tracking-error 2-norm: %.6g\n", norm(e_ex, 2)); %[output:935dae70]
+save_experiment_figures(runDir, gcf);
 %%
 %[text] ## 6. Compare the latest three methods at one speed
 %[text] The latest matching file is selected for each method. If a method is missing, this optional comparison is skipped.
-dataDir = fullfile(pwd, "data");
+if ~exist("runDir", "var") || ~isfolder(runDir)
+    runDir = create_run_directory(fullfile(projectRoot, "data", "ff"), "comparison");
+end
+dataDir = fullfile(projectRoot, "data", "ff");
 comparisonSpeed = 0.600;
 comparisonTags = ["notSpecial", "Special", "only"];
 comparisonData = struct();
 
 for tag = comparisonTags %[output:group:755cd5dc]
-    pattern = sprintf("V%.3f_%s_Result_*.mat", comparisonSpeed, tag);
-    matches = dir(fullfile(dataDir, pattern));
+    pattern = sprintf("V%.3f_%s_Result*.mat", comparisonSpeed, tag);
+    matches = dir(fullfile(dataDir, "**", pattern));
     if isempty(matches)
         warning("No %s result at %.3f m/s.", tag, comparisonSpeed); %[output:7fbad5a6] %[output:2859ca0a] %[output:214a8232]
         continue
@@ -187,8 +191,11 @@ if all(isfield(comparisonData, cellstr(comparisonTags)))
 end
 %%
 %[text] ## 7. Full-trace RMS and peak error by speed
-dataDir = fullfile(pwd, "data");
-files = dir(fullfile(dataDir, "V*_Result_*.mat"));
+if ~exist("runDir", "var") || ~isfolder(runDir)
+    runDir = create_run_directory(fullfile(projectRoot, "data", "ff"), "comparison");
+end
+dataDir = fullfile(projectRoot, "data", "ff");
+files = dir(fullfile(dataDir, "**", "V*_Result*.mat"));
 speedNot = []; rmsNot = []; peakNot = [];
 speedSpecial = []; rmsSpecial = []; peakSpecial = [];
 
@@ -231,9 +238,11 @@ xlabel("Velocity [m/s]"); ylabel("Peak tracking error [m]"); %[output:00b3d6c1]
 legend("Location", "best"); %[output:00b3d6c1]
 %%
 %[text] ## 8. Forward/return constant-velocity analysis
-load("config/data/config_tunable.mat", "Ts");
-dataDir = fullfile(pwd, "data");
-files = dir(fullfile(dataDir, "V*_Result_*.mat"));
+if ~exist("runDir", "var") || ~isfolder(runDir)
+    runDir = create_run_directory(fullfile(projectRoot, "data", "ff"), "comparison");
+end
+dataDir = fullfile(projectRoot, "data", "ff");
+files = dir(fullfile(dataDir, "**", "V*_Result*.mat"));
 
 if isempty(files)
     warning("No feedforward result files were found in %s.", dataDir);
@@ -256,10 +265,8 @@ else
             continue
         end
 
-        resultTs = Ts;
-        if isfield(result, "Ts")
-            resultTs = result.Ts;
-        else
+        resultTs = result_sample_period(result);
+        if isempty(resultTs)
             warning("Ts is missing; skipping sample-rate-unsafe analysis: %s", ...
                 files(k).name);
             continue
@@ -346,7 +353,8 @@ else
     xlabel("Velocity [m/s]"); ylabel("Peak tracking error [m]");
     legend("Location", "best");
 
-    summaryMat = fullfile(dataDir, "rms_summary.mat");
+    ilc = load_ilc_summary(fullfile(projectRoot, "data", "ilc"), ...
+        velTol, accTolMin, accRel);
     figure; hold on; grid on;
     semilogy(speedFbF, rmsFbF, "o-", "DisplayName", "FB only (forward)");
     semilogy(-speedFbR, rmsFbR, "o--", "DisplayName", "FB only (return)");
@@ -354,14 +362,11 @@ else
     semilogy(-speedPosR, rmsPosR, "s--", "DisplayName", "Position-dependent only (return)");
     semilogy(speedPropF, rmsPropF, "^-", "DisplayName", "Proposed (forward)");
     semilogy(-speedPropR, rmsPropR, "^--", "DisplayName", "Proposed (return)");
-    if isfile(summaryMat)
-        ilc = load(summaryMat);
-        if isfield(ilc, "forward") && isfield(ilc, "return_")
-            plot(ilc.forward.speed(:), ilc.forward.rms(:), "k^", ...
-                "LineWidth", 1.5, "DisplayName", "ILC (forward)");
-            plot(-ilc.return_.speed(:), ilc.return_.rms(:), "kv", ...
-                "LineWidth", 1.5, "DisplayName", "ILC (return)");
-        end
+    if isfield(ilc, "forward") && isfield(ilc, "return_")
+        plot(ilc.forward.speed(:), ilc.forward.rms(:), "k^", ...
+            "LineWidth", 1.5, "DisplayName", "ILC (forward)");
+        plot(-ilc.return_.speed(:), ilc.return_.rms(:), "kv", ...
+            "LineWidth", 1.5, "DisplayName", "ILC (return)");
     end
     xlabel("Velocity [m/s]"); ylabel("RMS tracking error [m]");
     legend("Location", "best");
@@ -373,17 +378,80 @@ else
     semilogy(-speedPosR, peakPosR, "s--", "DisplayName", "Position-dependent only (return)");
     semilogy(speedPropF, peakPropF, "^-", "DisplayName", "Proposed (forward)");
     semilogy(-speedPropR, peakPropR, "^--", "DisplayName", "Proposed (return)");
-    if isfile(summaryMat)
-        ilc = load(summaryMat);
-        if isfield(ilc, "forward") && isfield(ilc, "return_")
-            plot(ilc.forward.speed(:), ilc.forward.inf_norm(:), "k^", ...
-                "LineWidth", 1.5, "DisplayName", "ILC (forward)");
-            plot(-ilc.return_.speed(:), ilc.return_.inf_norm(:), "kv", ...
-                "LineWidth", 1.5, "DisplayName", "ILC (return)");
-        end
+    if isfield(ilc, "forward") && isfield(ilc, "return_")
+        plot(ilc.forward.speed(:), ilc.forward.inf_norm(:), "k^", ...
+            "LineWidth", 1.5, "DisplayName", "ILC (forward)");
+        plot(-ilc.return_.speed(:), ilc.return_.inf_norm(:), "kv", ...
+            "LineWidth", 1.5, "DisplayName", "ILC (return)");
     end
     xlabel("Velocity [m/s]"); ylabel("Peak tracking error [m]");
     legend("Location", "best");
+end
+save_experiment_figures(runDir, findall(groot, "Type", "figure"));
+
+function Ts = result_sample_period(result)
+Ts = [];
+if isfield(result, "Ts") && isscalar(result.Ts) && result.Ts > 0
+    Ts = result.Ts;
+elseif isfield(result, "t_ex") && numel(result.t_ex) >= 2
+    Ts = median(diff(result.t_ex(:)));
+elseif isfield(result, "history") && isfield(result.history, "t") && ...
+        numel(result.history.t) >= 2
+    Ts = median(diff(result.history.t(:)));
+end
+if isempty(Ts) || ~isfinite(Ts) || Ts <= 0
+    Ts = [];
+end
+end
+
+function ilc = load_ilc_summary(ilcDir, velTol, accTolMin, accRel)
+ilc = struct();
+summaryFiles = dir(fullfile(ilcDir, "**", "rms_summary.mat"));
+if ~isempty(summaryFiles)
+    [~, latestSummary] = max([summaryFiles.datenum]);
+    ilc = load(fullfile(summaryFiles(latestSummary).folder, ...
+        summaryFiles(latestSummary).name));
+    return
+end
+
+files = dir(fullfile(ilcDir, "**", "ilc_result_V*.mat"));
+forwardSpeed = []; forwardRms = []; forwardPeak = [];
+returnSpeed = []; returnRms = []; returnPeak = [];
+for k = 1:numel(files)
+    result = load(fullfile(files(k).folder, files(k).name));
+    if ~isfield(result, "history") || ~isfield(result.history, "r") || ...
+            ~isfield(result.history, "e")
+        continue
+    end
+    Ts = result_sample_period(result);
+    if isempty(Ts)
+        continue
+    end
+    trial = size(result.history.e, 2);
+    if isfield(result, "completedTrials")
+        trial = min(trial, result.completedTrials);
+    end
+    if trial < 1
+        continue
+    end
+    [pair, ~] = split_forward_return(result.history.r(:, trial), ...
+        result.history.e(:, trial), Ts, velTol, accTolMin, accRel);
+    if isempty(fieldnames(pair))
+        continue
+    end
+    forwardSpeed(end+1) = pair.forward.mean_vel; %#ok<AGROW>
+    forwardRms(end+1) = sqrt(mean(pair.forward.e.^2)); %#ok<AGROW>
+    forwardPeak(end+1) = norm(pair.forward.e, inf); %#ok<AGROW>
+    returnSpeed(end+1) = pair.return.mean_vel; %#ok<AGROW>
+    returnRms(end+1) = sqrt(mean(pair.return.e.^2)); %#ok<AGROW>
+    returnPeak(end+1) = norm(pair.return.e, inf); %#ok<AGROW>
+end
+if ~isempty(forwardSpeed)
+    ilc.forward = struct("speed", forwardSpeed, "rms", forwardRms, ...
+        "inf_norm", forwardPeak);
+    ilc.return_ = struct("speed", returnSpeed, "rms", returnRms, ...
+        "inf_norm", returnPeak);
+end
 end
 
 function [pair, message] = split_forward_return(r, e, Ts, velTol, accTolMin, accRel)

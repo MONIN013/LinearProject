@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_IppCurrentRatio" Id="{9f95b821-e6f9-4e51-98dd-900047a04012}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_IppCurrentRatio
+VAR_INPUT
+    enable              : BOOL;
+    stParams            : DUT_ProtocolParams;
+    x_abs_m             : LREAL;
+    v_actual_mps        : LREAL;
+END_VAR
+VAR_OUTPUT
+    busy                : BOOL;
+    done                : BOOL;
+    fault               : BOOL;
+    fault_id            : UDINT;
+    iq_cmd_count_req    : INT;
+    iq_cmd_count_req_lreal : LREAL;
+    protocol2_local_sample_index : UINT;
+    experiment_angle_rad: LREAL;
+    phase_id            : UINT;
+    angle_index         : UINT;
+    x_ref_traj_m        : LREAL;
+END_VAR
+VAR
+    wasEnabled          : BOOL;
+    step_id             : UINT;
+    repeat_index        : UINT;
+    tStep_s             : LREAL;
+    xRef                : LREAL;
+    vRef                : LREAL;
+    vRefCommand         : LREAL;
+    speedErr            : LREAL;
+    speedInt            : LREAL;
+    speedIntLimit       : LREAL;
+    iqReq               : LREAL;
+    vmax                : LREAL;
+    accelTime           : LREAL;
+    constTime           : LREAL;
+    pauseTime           : LREAL;
+    accel               : LREAL;
+    taskDt_s            : LREAL;
+    localSampleIndex    : UINT;
+    prevAngleIndex      : UINT;
+    angleJustChanged    : BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT enable THEN
+    wasEnabled := FALSE;
+    step_id := 0;
+    repeat_index := 0;
+    tStep_s := 0.0;
+    speedInt := 0.0;
+    busy := FALSE;
+    done := FALSE;
+    fault := FALSE;
+    fault_id := 0;
+    iq_cmd_count_req := 0;
+    iq_cmd_count_req_lreal := 0.0;
+    protocol2_local_sample_index := 0;
+    experiment_angle_rad := 0.0;
+    phase_id := 0;
+    angle_index := 0;
+    x_ref_traj_m := x_abs_m;
+    localSampleIndex := 0;
+    prevAngleIndex := 0;
+    angleJustChanged := FALSE;
+    RETURN;
+END_IF
+
+IF NOT wasEnabled THEN
+    wasEnabled := TRUE;
+    busy := TRUE;
+    done := FALSE;
+    fault := FALSE;
+    fault_id := 0;
+    step_id := 0;
+    repeat_index := 0;
+    tStep_s := 0.0;
+    speedInt := 0.0;
+    phase_id := 0;
+    angle_index := 0;
+    localSampleIndex := 0;
+    prevAngleIndex := angle_index;
+    angleJustChanged := FALSE;
+    xRef := x_abs_m;
+    x_ref_traj_m := x_abs_m;
+END_IF
+
+taskDt_s := stParams.task_period_s;
+vmax := stParams.protocol2_vmax_mps;
+accelTime := stParams.protocol2_accel_time_s;
+constTime := stParams.protocol2_const_time_s;
+pauseTime := stParams.protocol2_pause_time_s;
+
+IF (taskDt_s <= 0.0) OR (vmax <= 0.0) OR (accelTime <= 0.0) OR (pauseTime < 0.0) THEN
+    fault := TRUE;
+    fault_id := 100;
+    busy := FALSE;
+    iq_cmd_count_req := 0;
+    iq_cmd_count_req_lreal := 0.0;
+    protocol2_local_sample_index := 0;
+    RETURN;
+END_IF
+
+IF angle_index = 0 THEN
+    experiment_angle_rad := 0.0;
+ELSE
+    experiment_angle_rad := -3.14159265358979323846 / 2.0;
+END_IF
+
+accel := vmax / accelTime;
+vRef := 0.0;
+CASE step_id OF
+0:
+    vRef := accel * tStep_s;
+    IF vRef > vmax THEN
+        vRef := vmax;
+    END_IF
+    IF tStep_s >= accelTime THEN
+        step_id := 1;
+        tStep_s := 0.0;
+    END_IF
+1:
+    vRef := vmax;
+    IF constTime <= 0.0 THEN
+        step_id := 2;
+        tStep_s := 0.0;
+    ELSIF tStep_s >= constTime THEN
+        step_id := 2;
+        tStep_s := 0.0;
+    END_IF
+2:
+    vRef := vmax - accel * tStep_s;
+    IF vRef < 0.0 THEN
+        vRef := 0.0;
+    END_IF
+    IF tStep_s >= accelTime THEN
+        IF pauseTime <= 0.0 THEN
+            step_id := 4;
+        ELSE
+            step_id := 3;
+        END_IF
+        tStep_s := 0.0;
+        speedInt := 0.0;
+    END_IF
+3:
+    vRef := 0.0;
+    IF tStep_s >= pauseTime THEN
+        step_id := 4;
+        tStep_s := 0.0;
+    END_IF
+4:
+    vRef := -accel * tStep_s;
+    IF vRef < -vmax THEN
+        vRef := -vmax;
+    END_IF
+    IF tStep_s >= accelTime THEN
+        step_id := 5;
+        tStep_s := 0.0;
+    END_IF
+5:
+    vRef := -vmax;
+    IF constTime <= 0.0 THEN
+        step_id := 6;
+        tStep_s := 0.0;
+    ELSIF tStep_s >= constTime THEN
+        step_id := 6;
+        tStep_s := 0.0;
+    END_IF
+6:
+    vRef := -vmax + accel * tStep_s;
+    IF vRef > 0.0 THEN
+        vRef := 0.0;
+    END_IF
+    IF tStep_s >= accelTime THEN
+        tStep_s := 0.0;
+        speedInt := 0.0;
+        IF pauseTime <= 0.0 THEN
+            step_id := 0;
+            IF angle_index = 0 THEN
+                angle_index := 1;
+            ELSE
+                angle_index := 0;
+                IF repeat_index + 1 >= stParams.protocol2_repeat_count THEN
+                    busy := FALSE;
+                    done := TRUE;
+                    phase_id := 99;
+                ELSE
+                    repeat_index := repeat_index + 1;
+                END_IF
+            END_IF
+        ELSE
+            step_id := 7;
+        END_IF
+    END_IF
+7:
+    vRef := 0.0;
+    IF tStep_s >= pauseTime THEN
+        step_id := 0;
+        tStep_s := 0.0;
+        speedInt := 0.0;
+        IF angle_index = 0 THEN
+            angle_index := 1;
+        ELSE
+            angle_index := 0;
+            IF repeat_index + 1 >= stParams.protocol2_repeat_count THEN
+                busy := FALSE;
+                done := TRUE;
+                phase_id := 99;
+            ELSE
+                repeat_index := repeat_index + 1;
+            END_IF
+        END_IF
+    END_IF
+ELSE
+    fault := TRUE;
+    fault_id := 400;
+    busy := FALSE;
+END_CASE
+
+angleJustChanged := angle_index <> prevAngleIndex;
+IF angleJustChanged THEN
+    localSampleIndex := 0;
+    prevAngleIndex := angle_index;
+END_IF
+
+protocol2_local_sample_index := localSampleIndex;
+
+IF done THEN
+    iq_cmd_count_req := 0;
+    iq_cmd_count_req_lreal := 0.0;
+    x_ref_traj_m := xRef;
+    RETURN;
+END_IF
+
+IF stParams.velocity_mps_per_count > 0.0 THEN
+    vRefCommand := DINT_TO_LREAL(LREAL_TO_DINT(vRef / stParams.velocity_mps_per_count))
+                   * stParams.velocity_mps_per_count;
+ELSE
+    vRefCommand := vRef;
+END_IF
+xRef := xRef + vRefCommand * taskDt_s;
+x_ref_traj_m := xRef;
+
+IF (step_id = 3) OR (step_id = 7) THEN
+    phase_id := 90;
+    iq_cmd_count_req := 0;
+    iq_cmd_count_req_lreal := 0.0;
+ELSE
+    IF angle_index = 0 THEN
+        phase_id := 10;
+    ELSE
+        phase_id := 11;
+    END_IF
+
+    speedErr := vRefCommand - v_actual_mps;
+    IF stParams.speed_ki_count_per_m <> 0.0 THEN
+        speedInt := speedInt + speedErr * taskDt_s;
+        speedIntLimit := INT_TO_LREAL(stParams.speed_integral_limit_count) / ABS(stParams.speed_ki_count_per_m);
+        IF speedInt > speedIntLimit THEN
+            speedInt := speedIntLimit;
+        ELSIF speedInt < -speedIntLimit THEN
+            speedInt := -speedIntLimit;
+        END_IF
+    ELSE
+        speedInt := 0.0;
+    END_IF
+
+    iqReq := stParams.speed_kp_count_per_mps * speedErr
+             + stParams.speed_ki_count_per_m * speedInt;
+    IF iqReq > INT_TO_LREAL(stParams.max_target_count) THEN
+        iqReq := INT_TO_LREAL(stParams.max_target_count);
+    ELSIF iqReq < -INT_TO_LREAL(stParams.max_target_count) THEN
+        iqReq := -INT_TO_LREAL(stParams.max_target_count);
+    END_IF
+    iq_cmd_count_req_lreal := iqReq;
+    iq_cmd_count_req := LREAL_TO_INT(iqReq);
+END_IF
+
+IF busy THEN
+    tStep_s := tStep_s + taskDt_s;
+    IF localSampleIndex < 65535 THEN
+        localSampleIndex := localSampleIndex + 1;
+    END_IF
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

@@ -1,14 +1,14 @@
 %[text] # Demo 4: Iterative Learning Control Experiment
-%[text] Run this live script from the project root. Trajectory generation requires Symbolic Math Toolbox.
+%[text] Run this live script from any directory. Trajectory generation requires Symbolic Math Toolbox.
 %[text] The build section only prepares the target. The trial loop operates the real stage and must be run by the experiment operator.
 %[text] ## 1. Load settings and design the feedback controller
 clear; close all;
-    run("config/config_tunable.m");
-projectRoot = pwd;
+projectRoot = fileparts(fileparts(mfilename("fullpath")));
+run(fullfile(projectRoot, "config", "config_tunable.m"));
 figToolsRoot = fullfile(fileparts(projectRoot), "FigTools");
 addpath(figToolsRoot, fullfile(figToolsRoot, "src"));
 
-load("config/data/pana_params.mat");
+load(fullfile(projectRoot, "config", "data", "pana_params.mat"));
 [plant, plantPath] = load_experiment_plant( ...
     projectRoot, plantDataFile, Ts);
 Pd = plant.Pd;
@@ -113,19 +113,23 @@ xlabel("Time [s]"); ylabel("Acceleration [m/s^2]"); %[output:35ace174]
 run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m")); %[output:491036df]
 %%
 %[text] ## 5. Run the ILC trials
-%[text] **Operator action:** this section connects to external mode once, runs all trials, and disconnects when the sequence finishes or is interrupted. Existing `simulink/data/measurement_*.mat` parts are deleted before every capture.
-open(ModelName);
+%[text] **Operator action:** this section connects to external mode once, runs all trials, and disconnects when the sequence finishes or is interrupted. Each trial's raw measurement is archived under this experiment's run directory.
+open(fullfile(projectRoot, ModelName));
 confirmEachTrial = false; % Set true to inspect each result before continuing.
+ilcRunDir = create_run_directory(fullfile(projectRoot, "data", "ilc"), ...
+    sprintf("V%.3f", v_max));
 run(fullfile(projectRoot, "exp04_ILC", "obtainMeasurement.m")); %[output:9e5550f3] %[output:8d9bb019] %[output:8b7427c5] %[output:63f5026d]
 %%
 %[text] ## Save the result
-resultFile = my_save_mat(sprintf("ilc_result_V%.3f", v_max), ... %[output:group:5b977f19] %[output:2293becd]
-    "history", "completedTrials", "Kd", "traj", "Q", "Fc", ... %[output:2293becd]
-    "Ts", "plantPath"); %[output:group:5b977f19] %[output:2293becd]
+resultFile = save_experiment_result(ilcRunDir, ...
+    sprintf("ilc_result_V%.3f", v_max), struct( ...
+    "history", history, "completedTrials", completedTrials, "Kd", Kd, ...
+    "traj", traj, "Q", Q, "Fc", Fc, "Ts", Ts, ...
+    "plantPath", plantPath));
 %%
 %[text] ## 6. Inspect the learned result
 iteration = completedTrials;
-figure; %[output:63951289]
+resultFigures(1) = figure; %[output:63951289]
 tiledlayout(3, 1); %[output:63951289]
 nexttile; plot(t, history.r(:, iteration), t, history.y(:, iteration)); %[output:63951289]
 grid on; ylabel("Position [m]"); legend(["Reference", "Position"]); %[output:63951289]
@@ -137,13 +141,14 @@ grid on; xlabel("Time [s]"); ylabel("Input [A]"); legend("FF", "FB"); %[output:6
 linkaxes(findall(gcf, "Type", "axes"), "x"); %[output:63951289]
 % pubfig(gcf);
 
-figure; %[output:189d17d7]
+resultFigures(2) = figure; %[output:189d17d7]
 semilogy(0:completedTrials-1, history.eNorm(1:completedTrials), "-o"); %[output:189d17d7]
 grid on; xlabel("Iteration"); %[output:189d17d7]
 ylabel("||e||_2"); title("ILC learning curve"); %[output:189d17d7]
 % pubfig(gcf);
+figureFiles = save_experiment_figures(ilcRunDir, resultFigures);
 
-% fprintf("Completed %d trial(s). Result: %s\n", completedTrials, resultFile);
+fprintf("Completed %d trial(s). Result: %s\n", completedTrials, resultFile);
 
 %[appendix]{"version":"1.0"}
 %---

@@ -1,5 +1,5 @@
 %% simulation setup
-open(ModelName)
+open(fullfile(projectRoot, ModelName))
 model = string(bdroot);
 params = struct( ...
     "p_ref",    zeros(N,1), ...

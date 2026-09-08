@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="DUT_ProtocolParams" Id="{9f95b821-e6f9-4e51-98dd-900047a01008}">
+    <Declaration><![CDATA[TYPE DUT_ProtocolParams : STRUCT
+    axis_index                   : UINT := 1;
+
+    position_raw_zero            : DINT := 0;
+    position_zero_m              : LREAL := 0.0;
+    position_m_per_count         : LREAL := 1.0e-7;
+    velocity_mps_per_count       : LREAL := 1.0e-6;
+
+    x_soft_min_m                 : LREAL := -0.01;
+    x_soft_max_m                 : LREAL := 0.01;
+    max_velocity_mps             : LREAL := 0.02;
+
+    max_target_count             : INT := 50;
+    current_ramp_count_per_s     : LREAL := 500.0;
+
+    task_period_s                : LREAL := 0.00025;
+    settle_time_s                : LREAL := 0.05;
+    pulse_time_s                 : LREAL := 0.05;
+    post_time_s                  : LREAL := 0.05;
+    timeout_s                    : LREAL := 10.0;
+
+    angle_start_rad              : LREAL := 0.0;
+    angle_step_rad               : LREAL := 0.5235987755982988;
+    angle_count                  : UINT := 12;
+
+    protocol2_repeat_count       : UINT := 2;
+    protocol2_vmax_mps           : LREAL := 0.002;
+    protocol2_accel_time_s       : LREAL := 0.050;
+    protocol2_const_time_s       : LREAL := 0.000;
+    protocol2_pause_time_s       : LREAL := 0.050;
+    speed_kp_count_per_mps       : LREAL := 20000.0;
+    speed_ki_count_per_m         : LREAL := 0.0;
+    speed_integral_limit_count   : INT := 200;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

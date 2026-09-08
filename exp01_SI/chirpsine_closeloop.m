@@ -3,8 +3,9 @@
 %[text] ### STEP 1: CHIRP EXCITATION
 %[text] load settings for the experiment
 clear; close all;
-run("config/config.m");
-load("config/data/pana_params.mat"); 
+projectRoot = fileparts(fileparts(mfilename("fullpath")));
+run(fullfile(projectRoot, "config", "config.m"));
+load(fullfile(projectRoot, "config", "data", "pana_params.mat"));
 feedbackFlag = 1;
 Kd = tf(0.06,1); % open-loop system identification % open-loop system identification
 %%
@@ -26,11 +27,11 @@ u = A*sin(p+(2*pi*(f0*t_relative + k/2 * t_relative.^2)));
 set_ff = u(:);
 set_ref = zeros(N,1);
 
-open(ModelName);
+open(fullfile(projectRoot, ModelName));
 %%
 %[text] execute experiment via simulink
 %[text] \*make sure to close all simulink files before executing this section
-open(ModelName);
+open(fullfile(projectRoot, ModelName));
 obtainMeasurement; %[output:0389ae77]
 %%
 count = measurement(1,:); % data counts
@@ -48,8 +49,11 @@ plot(count*Ts, input, count*Ts, torque); %[output:14795463]
 title('position output'); %[output:14795463]
 xlabel('time/s'); %[output:14795463]
 %%
-%[text] save experiment data
-% save("data_2k/chirp_result.mat","input","pos","Ts","Tend","Tcycle");
+chirpResult = struct("input", input, "output", output, "velocity", velocity, ...
+    "torque", torque, "Ts", Ts, "Tend", Tend, "Tcycle", Tcycle, ...
+    "measurement_metadata", measurement_metadata, ...
+    "measurement_source_path", measurement_source_path);
+save_experiment_result(runDir, "chirp_result", chirpResult);
 %%
 %[text] ### STEP 2: TIME TREATMENT
 %[text] download data
@@ -157,9 +161,13 @@ bode(Pd_tor,bop_); %[output:02696bab]
 %[text] save fitting data
 %[text] load-side position will be the main objective of control for demo2 to demo4
 % The selected output file is defined in config/sample_rate.m.
-save(plantDataFile, "Pd", "Pd_tor", "Pdn", ...
-    "Jn", "Dn", "Ndelay", "Ts", "Fs", "nominalFitBandHz", ...
-    "nominalFitCost", "measurement_metadata", "measurement_source_path");
+plantResult = struct("Pd", Pd, "Pd_tor", Pd_tor, "Pdn", Pdn, ...
+    "Jn", Jn, "Dn", Dn, "Ndelay", Ndelay, "Ts", Ts, "Fs", Fs, ...
+    "nominalFitBandHz", nominalFitBandHz, "nominalFitCost", nominalFitCost, ...
+    "measurement_metadata", measurement_metadata, ...
+    "measurement_source_path", measurement_source_path);
+save_experiment_plant(runDir, plantResult);
+save_experiment_figures(runDir, findall(groot, "Type", "figure"));
 
 
 %[appendix]{"version":"1.0"}

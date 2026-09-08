@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ExperimentSequencer" Id="{9f95b821-e6f9-4e51-98dd-900047a04002}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ExperimentSequencer
+VAR_INPUT
+    TaskPeriod_s       : LREAL := 0.00025;
+    HeartbeatTimeout_s : LREAL := 0.150;
+    Heartbeat          : DUT_Heartbeat;
+    MotorFeedback      : DUT_MotorFeedbackSnapshot;
+END_VAR
+VAR_IN_OUT
+    Command            : DUT_CommandMailbox;
+    ProtocolParams     : DUT_ProtocolParams;
+END_VAR
+VAR_OUTPUT
+    DriveCommand       : DUT_MotorDriverCommand;
+    CommutationOverride : DUT_CommutationOverride;
+    LoggerControl      : DUT_LoggerControl;
+    Context            : DUT_SequencerContext;
+    Status             : DUT_SequencerStatus;
+END_VAR
+VAR
+    fbDiff             : FB_DifferentialSweep;
+    fbIpp              : FB_IppCurrentRatio;
+    fbQAxis            : FB_DifferentialSweep;
+
+    state              : UINT;
+    lastRequestId      : UDINT;
+    lastHeartbeatCtr   : UDINT;
+    heartbeatAge_s     : LREAL;
+    activeLeaseId      : UDINT;
+    activeProtocolId   : UINT;
+    activeParams       : DUT_ProtocolParams;
+    runTime_s          : LREAL;
+    targetRampCount    : INT;
+    targetRampLreal    : LREAL;
+    rampDelta          : LREAL;
+    appliedCommandLreal : LREAL;
+    protocolDone       : BOOL;
+    protocolFault      : BOOL;
+    protocolFaultId    : UDINT;
+    protocolBusy       : BOOL;
+    iqReq              : INT;
+    iqReqLreal         : LREAL;
+    phaseId            : UINT;
+    angleIndex         : UINT;
+    localSampleIndex   : UINT;
+    expAngle           : LREAL;
+    xRefTraj           : LREAL;
+    xAbs_m             : LREAL;
+    vActual_mps        : LREAL;
+    faultId            : UDINT;
+    latchedFaultId     : UDINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[LoggerControl.reset := FALSE;
+LoggerControl.capture_enable := FALSE;
+faultId := 0;
+
+IF Heartbeat.lease_id = activeLeaseId THEN
+    IF Heartbeat.counter <> lastHeartbeatCtr THEN
+        heartbeatAge_s := 0.0;
+        lastHeartbeatCtr := Heartbeat.counter;
+    ELSE
+        heartbeatAge_s := heartbeatAge_s + TaskPeriod_s;
+    END_IF
+ELSIF state = 2 THEN
+    heartbeatAge_s := heartbeatAge_s + TaskPeriod_s;
+END_IF
+
+IF Command.request_id <> lastRequestId THEN
+    lastRequestId := Command.request_id;
+    Command.rejection_reason := '';
+
+    IF Command.command_id = 4 THEN
+        state := 0;
+        activeLeaseId := 0;
+        activeProtocolId := 0;
+        targetRampCount := 0;
+        targetRampLreal := 0.0;
+        heartbeatAge_s := 0.0;
+        latchedFaultId := 0;
+        LoggerControl.reset := TRUE;
+        Command.last_accepted_request_id := Command.request_id;
+
+    ELSIF Command.command_id = 1 THEN
+        IF state <> 0 THEN
+            Command.last_rejected_request_id := Command.request_id;
+            Command.rejection_reason := 'not idle';
+        ELSIF (Command.protocol_id < 1) OR (Command.protocol_id > 3) THEN
+            Command.last_rejected_request_id := Command.request_id;
+            Command.rejection_reason := 'unsupported protocol';
+        ELSIF Command.lease_id = 0 THEN
+            Command.last_rejected_request_id := Command.request_id;
+            Command.rejection_reason := 'zero lease';
+        ELSE
+            activeParams := ProtocolParams;
+            activeParams.task_period_s := TaskPeriod_s;
+            IF Command.protocol_id = 3 THEN
+                activeParams.angle_count := 1;
+                activeParams.angle_start_rad := 0.0;
+                activeParams.angle_step_rad := 0.0;
+            END_IF
+            state := 1;
+            activeLeaseId := Command.lease_id;
+            activeProtocolId := Command.protocol_id;
+            targetRampCount := 0;
+            targetRampLreal := 0.0;
+            runTime_s := 0.0;
+            heartbeatAge_s := 0.0;
+            latchedFaultId := 0;
+            LoggerControl.reset := TRUE;
+            Command.last_accepted_request_id := Command.request_id;
+        END_IF
+
+    ELSIF Command.command_id = 2 THEN
+        IF (state = 1) AND (Command.lease_id = activeLeaseId) THEN
+            state := 2;
+            runTime_s := 0.0;
+            heartbeatAge_s := 0.0;
+            Command.last_accepted_request_id := Command.request_id;
+        ELSE
+            Command.last_rejected_request_id := Command.request_id;
+            Command.rejection_reason := 'not prepared or lease mismatch';
+        END_IF
+
+    ELSIF Command.command_id = 3 THEN
+        state := 0;
+        targetRampCount := 0;
+        targetRampLreal := 0.0;
+        latchedFaultId := 0;
+        Command.last_accepted_request_id := Command.request_id;
+
+    ELSE
+        Command.last_rejected_request_id := Command.request_id;
+        Command.rejection_reason := 'unknown command';
+    END_IF
+END_IF
+
+xAbs_m :=
+    activeParams.position_zero_m
+    + DINT_TO_LREAL(MotorFeedback.encoder_position_raw - activeParams.position_raw_zero)
+      * activeParams.position_m_per_count;
+vActual_mps := DINT_TO_LREAL(MotorFeedback.encoder_velocity_raw)
+    * activeParams.velocity_mps_per_count;
+
+protocolDone := FALSE;
+protocolFault := FALSE;
+protocolFaultId := 0;
+protocolBusy := FALSE;
+iqReq := 0;
+iqReqLreal := 0.0;
+phaseId := 0;
+angleIndex := 0;
+localSampleIndex := 0;
+expAngle := 0.0;
+xRefTraj := xAbs_m;
+
+fbDiff(
+    enable := (state = 2) AND (activeProtocolId = 1),
+    stParams := activeParams,
+    x_abs_m := xAbs_m,
+    negate_second_pulse := FALSE);
+
+fbIpp(
+    enable := (state = 2) AND (activeProtocolId = 2),
+    stParams := activeParams,
+    x_abs_m := xAbs_m,
+    v_actual_mps := vActual_mps);
+
+fbQAxis(
+    enable := (state = 2) AND (activeProtocolId = 3),
+    stParams := activeParams,
+    x_abs_m := xAbs_m,
+    negate_second_pulse := TRUE);
+
+IF activeProtocolId = 1 THEN
+    protocolBusy := fbDiff.busy;
+    protocolDone := fbDiff.done;
+    protocolFault := fbDiff.fault;
+    protocolFaultId := fbDiff.fault_id;
+    iqReq := fbDiff.iq_cmd_count_req;
+    iqReqLreal := INT_TO_LREAL(iqReq);
+    phaseId := fbDiff.phase_id;
+    angleIndex := fbDiff.angle_index;
+    expAngle := fbDiff.experiment_angle_rad;
+    xRefTraj := fbDiff.x_ref_traj_m;
+ELSIF activeProtocolId = 2 THEN
+    protocolBusy := fbIpp.busy;
+    protocolDone := fbIpp.done;
+    protocolFault := fbIpp.fault;
+    protocolFaultId := fbIpp.fault_id;
+    iqReq := fbIpp.iq_cmd_count_req;
+    iqReqLreal := fbIpp.iq_cmd_count_req_lreal;
+    phaseId := fbIpp.phase_id;
+    angleIndex := fbIpp.angle_index;
+    localSampleIndex := fbIpp.protocol2_local_sample_index;
+    expAngle := fbIpp.experiment_angle_rad;
+    xRefTraj := fbIpp.x_ref_traj_m;
+ELSIF activeProtocolId = 3 THEN
+    protocolBusy := fbQAxis.busy;
+    protocolDone := fbQAxis.done;
+    protocolFault := fbQAxis.fault;
+    protocolFaultId := fbQAxis.fault_id;
+    iqReq := fbQAxis.iq_cmd_count_req;
+    iqReqLreal := INT_TO_LREAL(iqReq);
+    phaseId := fbQAxis.phase_id;
+    angleIndex := fbQAxis.angle_index;
+    expAngle := fbQAxis.experiment_angle_rad;
+    xRefTraj := fbQAxis.x_ref_traj_m;
+END_IF
+
+IF state = 2 THEN
+    runTime_s := runTime_s + TaskPeriod_s;
+    IF heartbeatAge_s > HeartbeatTimeout_s THEN
+        state := 9;
+        faultId := 700;
+    ELSIF MotorFeedback.fault_id <> 0 THEN
+        state := 9;
+        faultId := MotorFeedback.fault_id;
+    ELSIF protocolFault THEN
+        state := 9;
+        faultId := protocolFaultId;
+    ELSIF (activeParams.timeout_s > 0.0) AND (runTime_s > activeParams.timeout_s) THEN
+        state := 9;
+        faultId := 701;
+    ELSIF (xAbs_m < activeParams.x_soft_min_m) OR (xAbs_m > activeParams.x_soft_max_m) THEN
+        state := 9;
+        faultId := 702;
+    ELSIF ABS(vActual_mps) > activeParams.max_velocity_mps THEN
+        state := 9;
+        faultId := 703;
+    ELSIF protocolDone THEN
+        state := 3;
+    END_IF
+END_IF
+
+IF (state = 9) AND (faultId <> 0) THEN
+    latchedFaultId := faultId;
+END_IF
+
+IF state <> 2 THEN
+    iqReq := 0;
+    iqReqLreal := 0.0;
+END_IF
+
+rampDelta := activeParams.current_ramp_count_per_s * TaskPeriod_s;
+IF rampDelta <= 0.0 THEN
+    rampDelta := INT_TO_LREAL(activeParams.max_target_count);
+END_IF
+
+IF targetRampLreal < iqReqLreal THEN
+    targetRampLreal := targetRampLreal + rampDelta;
+    IF targetRampLreal > iqReqLreal THEN
+        targetRampLreal := iqReqLreal;
+    END_IF
+ELSIF targetRampLreal > iqReqLreal THEN
+    targetRampLreal := targetRampLreal - rampDelta;
+    IF targetRampLreal < iqReqLreal THEN
+        targetRampLreal := iqReqLreal;
+    END_IF
+END_IF
+targetRampCount := LREAL_TO_INT(targetRampLreal);
+appliedCommandLreal := 0.0;
+
+DriveCommand.ControlWord := WORD#16#0000;
+DriveCommand.TargetTorque := 0;
+
+CommutationOverride.enable := FALSE;
+CommutationOverride.angle_offset_rad := expAngle;
+CommutationOverride.axis_index := activeParams.axis_index;
+
+IF (state = 2) AND protocolBusy AND (heartbeatAge_s <= HeartbeatTimeout_s) THEN
+    appliedCommandLreal := targetRampLreal;
+
+    IF (MotorFeedback.copley_statusword AND WORD#16#006F) = WORD#16#0027 THEN
+        DriveCommand.ControlWord := WORD#16#000F;
+    ELSIF (MotorFeedback.copley_statusword AND WORD#16#006F) = WORD#16#0023 THEN
+        DriveCommand.ControlWord := WORD#16#000F;
+    ELSIF (MotorFeedback.copley_statusword AND WORD#16#006F) = WORD#16#0021 THEN
+        DriveCommand.ControlWord := WORD#16#0007;
+    ELSIF (MotorFeedback.copley_statusword AND WORD#16#004F) = WORD#16#0040 THEN
+        DriveCommand.ControlWord := WORD#16#0006;
+    ELSE
+        DriveCommand.ControlWord := WORD#16#0006;
+    END_IF
+    DriveCommand.TargetTorque := targetRampCount;
+
+    CommutationOverride.enable := TRUE;
+    CommutationOverride.angle_offset_rad := expAngle;
+END_IF
+
+LoggerControl.capture_enable := (state = 2);
+
+Context.protocol_id := activeProtocolId;
+Context.phase_id := phaseId;
+Context.angle_index := angleIndex;
+Context.protocol2_local_sample_index := localSampleIndex;
+Context.experiment_angle_rad := expAngle;
+Context.x_ref_traj_m := xRefTraj;
+Context.t_cycle_s := runTime_s;
+IF state = 9 THEN
+    Context.fault_id := latchedFaultId;
+ELSE
+    Context.fault_id := faultId;
+END_IF
+Context.iq_cmd_count_req_lreal := iqReqLreal;
+Context.target_current_count_lreal := appliedCommandLreal;
+
+Status.done := state = 3;
+Status.fault := state = 9;
+IF state = 9 THEN
+    IF latchedFaultId = 0 THEN
+        Status.fault_id := 799;
+    ELSE
+        Status.fault_id := latchedFaultId;
+    END_IF
+ELSIF state = 0 THEN
+    Status.fault_id := 0;
+END_IF
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

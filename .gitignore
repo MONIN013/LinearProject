@@ -38,3 +38,21 @@ codegen/
 # SimBiology backup files
 *.sbproj.backup
 *.sbproj.bak
+
+# Local experiment captures
+/data/ff/integration_*/
+
+# TwinCAT generated files
+.vs/
+twincat/_Repository/
+twincat/**/_Libraries/
+*.tclrs
+*.compileinfo
+*.tmc
+*.tmi
+*.~u
+*.tsproj.user
+*.suo
+_Boot/
+_TwinCAT*/
+*.real.local.json

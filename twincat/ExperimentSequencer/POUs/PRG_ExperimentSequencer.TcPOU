@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="PRG_ExperimentSequencer" Id="{9f95b821-e6f9-4e51-98dd-900047a04003}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM PRG_ExperimentSequencer
+VAR
+    fbSequencer  : FB_ExperimentSequencer;
+    taskIndex      : DINT;
+    cycleTime100ns : UDINT;
+    taskPeriod_s   : LREAL := 0.00025;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[taskIndex := GETCURTASKINDEXEX();
+IF taskIndex > 0 THEN
+    cycleTime100ns := TwinCAT_SystemInfoVarList._TaskInfo[taskIndex].CycleTime;
+    IF cycleTime100ns > 0 THEN
+        taskPeriod_s := UDINT_TO_LREAL(cycleTime100ns) * 1.0E-7;
+    END_IF
+END_IF
+GVL_ExperimentSequencer.taskPeriod_s := taskPeriod_s;
+
+fbSequencer(
+    TaskPeriod_s := taskPeriod_s,
+    Heartbeat := GVL_ExperimentSequencer.heartbeat,
+    MotorFeedback := GVL_ExperimentSequencer.motorFeedback,
+    Command := GVL_ExperimentSequencer.command,
+    ProtocolParams := GVL_ExperimentSequencer.protocolParams);
+
+GVL_ExperimentSequencer.driveCommand := fbSequencer.DriveCommand;
+GVL_ExperimentSequencer.commutationOverride := fbSequencer.CommutationOverride;
+GVL_ExperimentSequencer.loggerControl := fbSequencer.LoggerControl;
+GVL_ExperimentSequencer.context := fbSequencer.Context;
+GVL_ExperimentSequencer.status := fbSequencer.Status;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

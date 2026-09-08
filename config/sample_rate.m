@@ -8,7 +8,7 @@ Ts = 1/sampleRateHz;
 
 switch sampleRateHz
     case 4e3
-        plantDataFile = "data_4k/charp_plant.mat";
+        plantDataFile = "data/plants/4khz/current.mat";
     case 8e3
-        plantDataFile = "data/plant.mat";
+        plantDataFile = "data/plants/8khz/current.mat";
 end

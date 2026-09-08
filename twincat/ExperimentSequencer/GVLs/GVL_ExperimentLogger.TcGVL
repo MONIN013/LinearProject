@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="GVL_ExperimentLogger" Id="{9f95b821-e6f9-4e51-98dd-900047a05001}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+    LOG_CAPACITY : UDINT := 820000;
+END_VAR
+
+VAR_GLOBAL
+    // ADS read-only download boundary for MATLAB.
+    buffer        : ARRAY[0..819999] OF DUT_LoggerSample;
+    sampleCount   : UDINT;
+    overflow      : BOOL;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

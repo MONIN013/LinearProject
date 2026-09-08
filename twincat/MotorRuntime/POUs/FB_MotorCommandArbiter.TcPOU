@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_MotorCommandArbiter" Id="{18bc077a-ad48-4474-8864-af33b5a0f696}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MotorCommandArbiter
+VAR_INPUT
+    NormalCommand         : DUT_MotorDriverCommand;
+    CommissioningCommand  : DUT_MotorDriverCommand;
+    CommutationOverride   : DUT_CommutationOverride;
+END_VAR
+VAR_OUTPUT
+    SelectedCommand             : DUT_MotorDriverCommand;
+    SelectedCommutationOverride : DUT_CommutationOverride;
+    CommissioningActive         : BOOL;
+END_VAR
+VAR
+    normalCommandZero      : BOOL;
+    commissioningRequested : BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[normalCommandZero :=
+    (NormalCommand.ControlWord = WORD#16#0000)
+    AND (NormalCommand.TargetTorque = 0);
+
+// The public virtual-CST command is the normal runtime authority. Do not
+// reinterpret, pulse-limit, range-filter, or insert zero cycles into its
+// ControlWord/TargetTorque pair. The physical drive owns its safety limits.
+// Commissioning can take ownership only while the normal interface is idle.
+commissioningRequested :=
+    CommutationOverride.enable AND normalCommandZero;
+
+SelectedCommutationOverride.enable := FALSE;
+SelectedCommutationOverride.angle_offset_rad :=
+    CommutationOverride.angle_offset_rad;
+SelectedCommutationOverride.axis_index := CommutationOverride.axis_index;
+
+IF commissioningRequested THEN
+    SelectedCommand.ControlWord := CommissioningCommand.ControlWord;
+    SelectedCommand.TargetTorque := CommissioningCommand.TargetTorque;
+    SelectedCommutationOverride.enable := TRUE;
+    CommissioningActive := TRUE;
+ELSE
+    SelectedCommand.ControlWord := NormalCommand.ControlWord;
+    SelectedCommand.TargetTorque := NormalCommand.TargetTorque;
+    CommissioningActive := FALSE;
+END_IF
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

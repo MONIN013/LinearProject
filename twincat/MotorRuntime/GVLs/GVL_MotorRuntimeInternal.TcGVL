@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.14">
+  <GVL Name="GVL_MotorRuntimeInternal" Id="{e928e6af-236d-4e1b-a1cd-d8686014fa01}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+    AXIS_COUNT                    : UINT := 4;
+    // Compile-time normal-CST topology: FALSE drives axes 1+2; TRUE drives axes 1..4.
+    NORMAL_FOUR_AXIS_ENABLED      : BOOL := TRUE;
+    COUNTS_PER_ELECTRICAL_PERIOD : DINT := 360000;
+    // Public virtual CST follows CiA 402 rated torque / 1000. The physical
+    // Copley channels retain their high-resolution 0.1 A / 1000 scaling.
+    VIRTUAL_RATED_TORQUE_EQUIVALENT_CURRENT_MA : DINT := 2000;
+    COPLEY_INTERNAL_CURRENT_MA_PER_1000_COUNT   : DINT := 100;
+    // Inclusive raw Panasonic encoder windows. Adjacent windows overlap over
+    // the measured Core1~2, Core2~3, and Core3~4 transition regions.
+    TORQUE_LINKAGE_LOWER_COUNT : ARRAY [1..AXIS_COUNT] OF DINT := [
+        54054804, 55809159, 59369714, 63068811];
+    TORQUE_LINKAGE_UPPER_COUNT : ARRAY [1..AXIS_COUNT] OF DINT := [
+        57600015, 61230980, 64809681, 66655810];
+    // Each boundary may vary by 10% of the largest measured segment width:
+    // ceil((61230980 - 59369714) * 0.10). Extend both ends for either direction.
+    TORQUE_LINKAGE_MARGIN_COUNT : DINT := 186127;
+END_VAR
+
+VAR_GLOBAL RETAIN
+    // Registered values for all four axes mirror the checked-in authoritative
+    // manifest. Set validity false before replacing any complete record.
+    RegisteredReferenceValid : ARRAY [1..AXIS_COUNT] OF BOOL := [TRUE, TRUE, TRUE, TRUE];
+    RegisteredReference : ARRAY [1..AXIS_COUNT] OF DUT_AxisCalibration := [
+        (reference_position_count := 54984708,
+         reference_commutation_angle := 49480,
+         electrical_direction := 1),
+        (reference_position_count := 58408617,
+         reference_commutation_angle := 17933,
+         electrical_direction := 1),
+        (reference_position_count := 61902867,
+         reference_commutation_angle := 63448,
+         electrical_direction := 1),
+        (reference_position_count := 65824016,
+         reference_commutation_angle := 57717,
+         electrical_direction := 1)
+    ];
+END_VAR
+
+VAR_GLOBAL
+    // Commissioning writes provisional/interim references here. Normal CST
+    // never reads this non-retained array.
+    CommissioningReference : ARRAY [1..AXIS_COUNT] OF DUT_AxisCalibration;
+
+    // These linked process-image symbols are private commissioning channels.
+    // They are deliberately excluded from GVL_MotorRuntime.
+    CommissioningCommand AT %I* : DUT_MotorDriverCommand;
+    CommutationOverride  AT %I* : DUT_CommutationOverride;
+
+    // One-shot operator acknowledgement for a latched I/O-watchdog fault.
+    // PRG_MotorRuntime clears this after sampling it. A reset is accepted only
+    // while the selected command is explicitly zero and both slaves are healthy.
+    IoWatchdogResetRequest : BOOL;
+
+    // Private commissioning feedback.
+    Feedback AT %Q* : DUT_MotorFeedbackSnapshot;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

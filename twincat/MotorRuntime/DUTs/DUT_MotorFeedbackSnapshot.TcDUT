@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="DUT_MotorFeedbackSnapshot" Id="{83159f9b-f417-4e4a-9863-b754c0e3d16f}">
+    <Declaration><![CDATA[TYPE DUT_MotorFeedbackSnapshot : STRUCT
+    encoder_position_raw       : DINT;
+    encoder_velocity_raw       : DINT;
+    copley_statusword          : WORD;
+    copley_actual_current_count: INT;
+    output_torque_count        : INT;
+    fault_id                   : UDINT;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

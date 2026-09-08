@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="DUT_SequencerContext" Id="{9f95b821-e6f9-4e51-98dd-900047a01009}">
+    <Declaration><![CDATA[TYPE DUT_SequencerContext : STRUCT
+    protocol_id                  : UINT;
+    phase_id                     : UINT;
+    angle_index                  : UINT;
+    protocol2_local_sample_index : UINT;
+    experiment_angle_rad         : LREAL;
+    x_ref_traj_m                 : LREAL;
+    t_cycle_s                    : LREAL;
+    fault_id                     : UDINT;
+    iq_cmd_count_req_lreal       : LREAL;
+    target_current_count_lreal   : LREAL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

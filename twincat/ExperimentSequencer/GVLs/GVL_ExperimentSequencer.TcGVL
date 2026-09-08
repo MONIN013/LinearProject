@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="GVL_ExperimentSequencer" Id="{9f95b821-e6f9-4e51-98dd-900047a04001}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+    // ADS commissioning boundary.
+    command        : DUT_CommandMailbox;
+    protocolParams : DUT_ProtocolParams;
+    heartbeat      : DUT_Heartbeat;
+    status         : DUT_SequencerStatus;
+    // Actual assigned TwinCAT task period. MATLAB reads this value so its
+    // timing and analysis stay aligned when switching between 4 and 8 kHz.
+    taskPeriod_s   : LREAL;
+
+    // In-project logger inputs.
+    context        : DUT_SequencerContext;
+    loggerControl  : DUT_LoggerControl;
+
+    // Private commissioning/maintenance link to MotorRuntime. This is not the
+    // public virtual-CST interface and remains heartbeat-gated by the sequencer.
+    driveCommand        AT %Q* : DUT_MotorDriverCommand;
+    commutationOverride AT %Q* : DUT_CommutationOverride;
+
+    // Selected-axis maintenance feedback used only by commissioning and logging.
+    motorFeedback  AT %I* : DUT_MotorFeedbackSnapshot;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_DifferentialSweep" Id="{9f95b821-e6f9-4e51-98dd-900047a04010}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_DifferentialSweep
+VAR_INPUT
+    enable              : BOOL;
+    stParams            : DUT_ProtocolParams;
+    x_abs_m             : LREAL;
+    negate_second_pulse : BOOL := FALSE;
+END_VAR
+VAR_OUTPUT
+    busy                : BOOL;
+    done                : BOOL;
+    fault               : BOOL;
+    fault_id            : UDINT;
+    iq_cmd_count_req    : INT;
+    experiment_angle_rad: LREAL;
+    phase_id            : UINT;
+    angle_index         : UINT;
+    x_ref_traj_m        : LREAL;
+END_VAR
+VAR
+    wasEnabled          : BOOL;
+    tPhase_s            : LREAL;
+    alpha               : LREAL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT enable THEN
+    wasEnabled := FALSE;
+    tPhase_s := 0.0;
+    busy := FALSE;
+    done := FALSE;
+    fault := FALSE;
+    fault_id := 0;
+    iq_cmd_count_req := 0;
+    experiment_angle_rad := 0.0;
+    phase_id := 0;
+    angle_index := 0;
+    x_ref_traj_m := x_abs_m;
+    RETURN;
+END_IF
+
+IF NOT wasEnabled THEN
+    wasEnabled := TRUE;
+    busy := TRUE;
+    done := FALSE;
+    fault := FALSE;
+    fault_id := 0;
+    tPhase_s := 0.0;
+    phase_id := 0;
+    angle_index := 0;
+END_IF
+
+IF (stParams.angle_count = 0)
+    OR (negate_second_pulse AND (stParams.max_target_count <= 0)) THEN
+    fault := TRUE;
+    fault_id := 100;
+    busy := FALSE;
+    iq_cmd_count_req := 0;
+    RETURN;
+END_IF
+
+alpha := stParams.angle_start_rad + UINT_TO_LREAL(angle_index) * stParams.angle_step_rad;
+x_ref_traj_m := x_abs_m;
+iq_cmd_count_req := 0;
+experiment_angle_rad := alpha;
+
+CASE phase_id OF
+0:
+    iq_cmd_count_req := 0;
+    IF tPhase_s >= stParams.settle_time_s THEN
+        phase_id := 1;
+        tPhase_s := 0.0;
+    END_IF
+
+1:
+    experiment_angle_rad := alpha;
+    iq_cmd_count_req := stParams.max_target_count;
+    IF tPhase_s >= stParams.pulse_time_s THEN
+        phase_id := 2;
+        tPhase_s := 0.0;
+    END_IF
+
+2:
+    iq_cmd_count_req := 0;
+    IF tPhase_s >= stParams.settle_time_s THEN
+        phase_id := 3;
+        tPhase_s := 0.0;
+    END_IF
+
+3:
+    IF negate_second_pulse THEN
+        iq_cmd_count_req := -stParams.max_target_count;
+    ELSE
+        experiment_angle_rad := F_ArchWrap2Pi(alpha + 3.14159265358979323846);
+        iq_cmd_count_req := stParams.max_target_count;
+    END_IF
+    IF tPhase_s >= stParams.pulse_time_s THEN
+        phase_id := 4;
+        tPhase_s := 0.0;
+    END_IF
+
+4:
+    iq_cmd_count_req := 0;
+    IF tPhase_s >= stParams.post_time_s THEN
+        IF angle_index + 1 >= stParams.angle_count THEN
+            busy := FALSE;
+            done := TRUE;
+        ELSE
+            angle_index := angle_index + 1;
+            phase_id := 0;
+            tPhase_s := 0.0;
+        END_IF
+    END_IF
+ELSE
+    fault := TRUE;
+    fault_id := 400;
+    busy := FALSE;
+END_CASE
+
+IF busy THEN
+    tPhase_s := tPhase_s + stParams.task_period_s;
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

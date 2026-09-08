@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Accepted EL5042 references derived from paired-position commissioning results.",
+  "encoder_profile": "copley_bissc_100nm",
+  "registration_enabled": true,
+  "counts_per_electrical_period": 360000,
+  "target_symbol": "GVL_MotorRuntimeInternal.RegisteredReference",
+  "registration_entry_point": "src/register_magnetic_pole_references.m",
+  "axes": [
+    {
+      "axis_index": 1,
+      "reference_position_count": 54984708,
+      "reference_commutation_angle": 49480,
+      "electrical_direction": 1,
+      "source": "data/raw/replay_20260617_164644/commissioning_20260807_142216_759",
+      "source_result_local_time": "2026-08-07T14:22:16+09:00",
+      "source_artifact": "data/raw/replay_20260617_164644/commissioning_20260807_142216_759/commissioning_result.mat",
+      "source_json": "data/raw/replay_20260617_164644/commissioning_20260807_142216_759/theta_result.json",
+      "selection": "Former axis_index=2 accepted EL5042 result, reassigned to axis 1 after the physical Axis1/Axis2 wiring swap."
+    },
+    {
+      "axis_index": 2,
+      "reference_position_count": 58408617,
+      "reference_commutation_angle": 17933,
+      "electrical_direction": 1,
+      "source": "data/raw/replay_20260617_164644/commissioning_20260807_141224_687",
+      "source_result_local_time": "2026-08-07T14:12:24+09:00",
+      "source_artifact": "data/raw/replay_20260617_164644/commissioning_20260807_141224_687/commissioning_result.mat",
+      "source_json": "data/raw/replay_20260617_164644/commissioning_20260807_141224_687/theta_result.json",
+      "selection": "Former axis_index=1 accepted EL5042 result, reassigned to axis 2 after the physical Axis1/Axis2 wiring swap."
+    },
+    {
+      "axis_index": 3,
+      "reference_position_count": 61902867,
+      "reference_commutation_angle": 63448,
+      "electrical_direction": 1,
+      "source": "data/raw/replay_20260617_164644/commissioning_20260831_144234_825",
+      "source_result_local_time": "2026-08-31T14:42:34+09:00",
+      "source_artifact": "data/raw/replay_20260617_164644/commissioning_20260831_144234_825/commissioning_result.mat",
+      "source_json": "data/raw/replay_20260617_164644/commissioning_20260831_144234_825/theta_result.json",
+      "selection": "Latest explicitly selected axis_index=3 accepted EL5042 result."
+    },
+    {
+      "axis_index": 4,
+      "reference_position_count": 65824016,
+      "reference_commutation_angle": 57717,
+      "electrical_direction": 1,
+      "source": "data/raw/replay_20260617_164644/commissioning_20260831_150055_861",
+      "source_result_local_time": "2026-08-31T15:00:55+09:00",
+      "source_artifact": "data/raw/replay_20260617_164644/commissioning_20260831_150055_861/commissioning_result.mat",
+      "source_json": "data/raw/replay_20260617_164644/commissioning_20260831_150055_861/theta_result.json",
+      "selection": "Latest explicitly selected axis_index=4 accepted EL5042 result."
+    }
+  ],
+  "registration": {
+    "preconditions": [
+      "bitand(GVL_MotorRuntime.Command.ControlWord, 0x000F) != 0x000F",
+      "GVL_MotorRuntime.Command.TargetTorque == 0",
+      "GVL_MotorRuntimeInternal.CommissioningCommand.ControlWord == 0",
+      "GVL_MotorRuntimeInternal.CommissioningCommand.TargetTorque == 0",
+      "GVL_MotorRuntimeInternal.CommutationOverride.enable == false"
+    ],
+    "write_policy": "Clear all four axis valid flags, write and read back all four complete eight-byte records, recheck registration preconditions, then set all four valid flags.",
+    "verification": "Require exact readback of all three fields and all four valid flags before a future Operation Enabled request."
+  }
+}

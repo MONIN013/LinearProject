@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="F_ArchWrap2Pi" Id="{9f95b821-e6f9-4e51-98dd-900047a02001}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ArchWrap2Pi : LREAL
+VAR_INPUT
+    theta : LREAL;
+END_VAR
+VAR CONSTANT
+    TWO_PI : LREAL := 6.2831853071795864769;
+END_VAR
+VAR
+    y : LREAL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[y := theta - TWO_PI * LREAL_TO_DINT(theta / TWO_PI);
+WHILE y < 0.0 DO
+    y := y + TWO_PI;
+END_WHILE
+WHILE y >= TWO_PI DO
+    y := y - TWO_PI;
+END_WHILE
+F_ArchWrap2Pi := y;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

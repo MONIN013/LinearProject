@@ -4,7 +4,7 @@ if exist("velocitySweepEnabled", "var") && velocitySweepEnabled
     sweep = run_ilc_velocity_sweep( ...
         string(modelName), v_max_list, dist, a_max, t_pause, t_pre, ...
         t_post, Ntrial, Ts, fb, Gn0, Qsos, Qscale, MAX_INPUT, ...
-        confirmEachTrial, Kd, Q, Fc, plantPath);
+        confirmEachTrial, Kd, Q, Fc, plantPath, ilcRunDir);
     history = sweep.history;
     completedTrials = sweep.completedTrials;
     v_max = sweep.v_max;
@@ -20,25 +20,25 @@ else
     history = initialize_history(t, r, Ntrial);
     [history, completedTrials] = run_ilc_trials( ...
         string(modelName), history, Ntrial, N, t, Tend, Ts, fb, Gn0, ...
-        Qsos, Qscale, MAX_INPUT, confirmEachTrial);
+        Qsos, Qscale, MAX_INPUT, confirmEachTrial, ilcRunDir, "single");
 end
 
 function [history, completedTrials] = run_ilc_trials( ...
         model, history, Ntrial, N, t, Tend, Ts, fb, Gn0, ...
-        Qsos, Qscale, MAX_INPUT, confirmEachTrial)
+        Qsos, Qscale, MAX_INPUT, confirmEachTrial, runDir, velocityTag)
 [dataDir, bufferCapacity] = prepare_external_mode(model, N, Ts);
-cleanupGuard = onCleanup(@()reset_and_disconnect(model, N, bufferCapacity));
+cleanupGuard = onCleanup(@()reset_disconnect_and_archive( ...
+    model, N, bufferCapacity, dataDir, runDir, velocityTag, 0));
 connect_external_mode(model);
 [history, completedTrials] = run_ilc_trial_sequence( ...
     model, history, Ntrial, t, Tend, Ts, fb, Gn0, Qsos, Qscale, ...
-    MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity);
+    MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity, runDir, velocityTag);
 end
 
 function sweep = run_ilc_velocity_sweep( ...
         model, vMaxList, dist, aMax, tPause, tPre, tPost, Ntrial, ...
         Ts, fb, Gn0, Qsos, Qscale, maxInput, confirmEachTrial, ...
-        Kd, Q, Fc, plantPath)
-saveContext = {Kd, Q, Fc, plantPath}; %#ok<NASGU> my_save_mat resolves these names in this workspace.
+        Kd, Q, Fc, plantPath, runDir)
 assert(~isempty(vMaxList), "The velocity sweep requires at least one speed.");
 resultFiles = strings(numel(vMaxList), 1);
 completedTrialsByVelocity = zeros(numel(vMaxList), 1);
@@ -52,7 +52,8 @@ Tend = t(end);
 N = numel(r);
 
 [dataDir, bufferCapacity] = prepare_external_mode(model, N, Ts);
-cleanupGuard = onCleanup(@()reset_and_disconnect(model, N, bufferCapacity));
+cleanupGuard = onCleanup(@()reset_disconnect_and_archive( ...
+    model, N, bufferCapacity, dataDir, runDir, "velocity_interrupted", 0));
 connect_external_mode(model);
 
 for velocityIndex = 1:numel(vMaxList)
@@ -70,15 +71,17 @@ for velocityIndex = 1:numel(vMaxList)
     end
 
     history = initialize_history(t, r, Ntrial);
+    velocityTag = sprintf("velocity_%03d_V%.3f", velocityIndex, v_max);
     [history, completedTrials] = run_ilc_trial_sequence( ...
         model, history, Ntrial, t, Tend, Ts, fb, Gn0, Qsos, Qscale, ...
-        maxInput, confirmEachTrial, dataDir, bufferCapacity);
+        maxInput, confirmEachTrial, dataDir, bufferCapacity, runDir, velocityTag);
 
     completedTrialsByVelocity(velocityIndex) = completedTrials;
-    resultFiles(velocityIndex) = string(my_save_mat( ...
-        sprintf("ilc_result_V%.3f", v_max), ...
-        "history", "completedTrials", "v_max", "Kd", "traj", ...
-        "Q", "Fc", "Ts", "plantPath"));
+    resultFiles(velocityIndex) = string(save_experiment_result( ...
+        runDir, sprintf("ilc_result_V%.3f", v_max), struct( ...
+        "history", history, "completedTrials", completedTrials, ...
+        "v_max", v_max, "Kd", Kd, "traj", traj, "Q", Q, ...
+        "Fc", Fc, "Ts", Ts, "plantPath", plantPath)));
 
     if completedTrials < Ntrial
         warning("NikonMotor:ILCVelocitySweepStopped", ...
@@ -136,14 +139,16 @@ end
 
 function [history, completedTrials] = run_ilc_trial_sequence( ...
         model, history, Ntrial, t, Tend, Ts, fb, Gn0, ...
-        Qsos, Qscale, MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity)
+        Qsos, Qscale, MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity, ...
+        runDir, velocityTag)
 completedTrials = 0;
 progressFigure = gobjects(0);
 for iteration = 1:Ntrial
     r = history.r(:, iteration);
     f = history.f(:, iteration);
     measurement = capture_trial( ...
-        model, r, f, Tend, dataDir, Ts, bufferCapacity);
+        model, r, f, Tend, dataDir, Ts, bufferCapacity, runDir, ...
+        velocityTag, iteration);
 
     count = measurement(1, :);
     history.e(:, iteration) = measurement(2, :).';
@@ -152,6 +157,10 @@ for iteration = 1:Ntrial
     history.y_absolute(:, iteration) = measurement(8, :).';
     history.r(:, iteration) = measurement(9, :).';
     history.eNorm(iteration) = norm(history.e(:, iteration), 2);
+    save_experiment_result(runDir, ...
+        sprintf("ilc_progress_%s", velocityTag), struct( ...
+        "history", history, "completedTrials", completedTrials, ...
+        "capturedTrials", iteration, "Ts", Ts));
 
     lostPackages = setdiff(count(1):count(end), count);
     fprintf("Trial %d/%d: ||e||_2 = %.6g, lost packages = %d\n", ...
@@ -194,11 +203,10 @@ end
 end
 
 function measurement = capture_trial( ...
-        model, r, f, Tend, dataDir, Ts, bufferCapacity)
-parts = dir(fullfile(dataDir, "measurement_*.mat"));
-for k = 1:numel(parts)
-    delete(fullfile(parts(k).folder, parts(k).name));
-end
+        model, r, f, Tend, dataDir, Ts, bufferCapacity, runDir, ...
+        velocityTag, iteration)
+archive_measurement_parts(dataDir);
+try
 
 runValues = prepare_tunable_trajectory_parameters(r, f, bufferCapacity);
 runValues.p_active = 0;
@@ -227,6 +235,13 @@ end
 if metadata.timestamp_source ~= "tc_yout.logical_time"
     error("NikonMotor:MeasurementTimestampMissing", ...
         "TwinCAT logical timestamps are required for an experiment capture.");
+end
+archive_measurement_parts(dataDir, runDir, ...
+    fullfile("raw", velocityTag, sprintf("trial_%03d", iteration)));
+catch cause
+    reset_disconnect_and_archive( ...
+        model, numel(r), bufferCapacity, dataDir, runDir, velocityTag, iteration);
+    rethrow(cause);
 end
 end
 
@@ -352,6 +367,7 @@ catch cause
     warning("NikonMotor:ResetFailed", ...
         "ILC safety reset failed: %s", cause.message);
 end
+
 try
     status = string(get_param(model, "SimulationStatus"));
     if any(status == ["running", "external", "paused", "initializing"])
@@ -373,5 +389,17 @@ try
 catch cause
     warning("NikonMotor:DisconnectFailed", ...
         "External-mode disconnect failed: %s", cause.message);
+end
+end
+
+function reset_disconnect_and_archive( ...
+        model, N, bufferCapacity, dataDir, runDir, velocityTag, iteration)
+reset_and_disconnect(model, N, bufferCapacity);
+try
+    archive_measurement_parts(dataDir, runDir, ...
+        fullfile("raw", velocityTag, sprintf("trial_%03d", iteration)));
+catch cause
+    warning("NikonMotor:MeasurementArchiveFailed", ...
+        "ILC raw measurement was left in staging: %s", cause.message);
 end
 end

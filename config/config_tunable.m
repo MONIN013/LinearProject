@@ -1,6 +1,8 @@
 clear; close all;
 configDir = fileparts(mfilename("fullpath"));
 projectRoot = fileparts(configDir);
+addpath(projectRoot);
+projectRoot = setup_project();
 %% default control config
 run(fullfile(configDir, "sample_rate.m"));
 Tend = 1;

@@ -20,7 +20,13 @@ verifySubstring(testCase, source, ...
     "fullfile(projectRoot, ""exp03_FF"", ""setup_tunable.m"")");
 verifySubstring(testCase, source, ...
     "fullfile(projectRoot, ""exp04_ILC"", ""obtainMeasurement.m"")");
-verifySubstring(testCase, source, "open(ModelName)");
+verifySubstring(testCase, source, ...
+    "projectRoot = fileparts(fileparts(mfilename(""fullpath"")))");
+verifySubstring(testCase, source, "open(fullfile(projectRoot, ModelName))");
+verifySubstring(testCase, source, "create_run_directory(fullfile(projectRoot, ""data"", ""ilc"")");
+verifySubstring(testCase, source, "save_experiment_result(ilcRunDir");
+verifySubstring(testCase, source, ...
+    "save_experiment_figures(ilcRunDir, resultFigures)");
 verifySubstring(testCase, captureSource, ...
     "history.e(:, iteration) = measurement(2, :).'");
 verifySubstring(testCase, captureSource, ...
@@ -36,7 +42,14 @@ verifySubstring(testCase, captureSource, "filtfilt_clean(Qsos, Qscale");
 verifySubstring(testCase, captureSource, "max(abs(fNext)) > 2*MAX_INPUT");
 verifySubstring(testCase, source, "confirmEachTrial = false");
 verifySubstring(testCase, captureSource, "questdlg( ...");
-verifySubstring(testCase, source, "pubfig(gcf)");
+verifySubstring(testCase, captureSource, ...
+    "archive_measurement_parts(dataDir, runDir, ...");
+verifySubstring(testCase, captureSource, ...
+    "sprintf(""ilc_progress_%s"", velocityTag)");
+verifySubstring(testCase, captureSource, ...
+    """capturedTrials"", iteration, ""Ts"", Ts");
+verifyFalse(testCase, contains(captureSource, "delete(fullfile(parts(k).folder"));
+verifyFalse(testCase, contains(captureSource, "my_save_mat"));
 
 connectCall = "set_param(model, ""SimulationCommand"", ""connect"")";
 disconnectCall = "set_param(model, ""SimulationCommand"", ""disconnect"")";
@@ -54,7 +67,7 @@ verifySubstring(testCase, captureSource, "string(modelName)");
 verifySubstring(testCase, captureSource, "wait_until_connected(model, 10)");
 verifySubstring(testCase, captureSource, ...
     "setvars(model, struct(""p_active"", 0, ""p_servo"", 0))");
-verifySubstring(testCase, captureSource, "servoSettlingTime = 3");
+verifySubstring(testCase, captureSource, "servoSettlingTime = 1");
 verifySubstring(testCase, captureSource, ...
     "set_param(model, ""SimulationCommand"", ""stop"")");
 verifySubstring(testCase, captureSource, ...
@@ -72,10 +85,13 @@ captureSource = fileread(fullfile(testCase.TestData.repoRoot, ...
 
 verifySubstring(testCase, source, "%[text] # Demo 4 Neo");
 verifySubstring(testCase, source, "%[appendix]{""version"":""1.0""}");
-verifySubstring(testCase, source, "Ntrial = 10");
-verifySubstring(testCase, source, "v_max_list = 0.1:0.1:1.5");
+verifySubstring(testCase, source, "Ntrial = 15");
+verifySubstring(testCase, source, "v_max_list = 0.1:0.1:2.0");
 verifySubstring(testCase, source, "feedbackFlag = 1");
 verifySubstring(testCase, source, "velocitySweepEnabled = true");
+verifySubstring(testCase, source, ...
+    "projectRoot = fileparts(fileparts(mfilename(""fullpath"")))");
+verifySubstring(testCase, source, "open(fullfile(projectRoot, ModelName))");
 measurementRun = ...
     "fullfile(projectRoot, ""exp04_ILC"", ""obtainMeasurement.m"")";
 verifyEqual(testCase, count(string(source), measurementRun), 1);
@@ -87,6 +103,11 @@ verifySubstring(testCase, captureSource, ...
 verifySubstring(testCase, captureSource, "if completedTrials < Ntrial");
 verifySubstring(testCase, captureSource, ...
     "sprintf(""ilc_result_V%.3f"", v_max)");
+verifySubstring(testCase, source, """velocity_sweep""");
+verifySubstring(testCase, source, ...
+    "save_experiment_result(ilcRunDir, ""ilc_velocity_sweep""");
+verifySubstring(testCase, captureSource, ...
+    "fullfile(""raw"", velocityTag, sprintf(""trial_%03d"", iteration))");
 verifyFalse(testCase, contains(source, newline + "function "));
 
 sweepStart = strfind(captureSource, "function sweep = run_ilc_velocity_sweep");

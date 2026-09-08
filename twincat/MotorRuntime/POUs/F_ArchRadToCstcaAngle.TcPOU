@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="F_ArchRadToCstcaAngle" Id="{9f95b821-e6f9-4e51-98dd-900047a02002}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ArchRadToCstcaAngle : UINT
+VAR_INPUT
+    theta : LREAL;
+END_VAR
+VAR CONSTANT
+    TWO_PI : LREAL := 6.2831853071795864769;
+END_VAR
+VAR
+    wrapped : LREAL;
+    counts  : DINT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[wrapped := F_ArchWrap2Pi(theta);
+counts := LREAL_TO_DINT(wrapped / TWO_PI * 65536.0);
+IF counts >= 65536 THEN
+    counts := counts - 65536;
+ELSIF counts < 0 THEN
+    counts := counts + 65536;
+END_IF
+F_ArchRadToCstcaAngle := DINT_TO_UINT(counts);]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_MotorRuntimeKernel" Id="{9f95b821-e6f9-4e51-98dd-900047a03002}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MotorRuntimeKernel
+VAR_INPUT
+    Command                    : DUT_MotorDriverCommand;
+    CommutationOverride        : DUT_CommutationOverride;
+    RegisteredReferenceValid   : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF BOOL;
+    RegisteredReference        : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF DUT_AxisCalibration;
+    CommissioningReference     : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF DUT_AxisCalibration;
+    EncoderPositionActualRaw : DINT;
+    EncoderVelocityActualRaw : DINT;
+    CopleyStatusWord           : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF WORD;
+    CopleyActualCurrentCount   : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF INT;
+END_VAR
+VAR_OUTPUT
+    Status                     : DUT_MotorDriverStatus;
+    Feedback                   : DUT_MotorFeedbackSnapshot;
+    CopleyControlWord          : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF WORD;
+    CopleyTargetTorque         : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF INT;
+    CopleyCommutationAngle     : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF UINT;
+    Fault                      : BOOL;
+    FaultId                    : UDINT;
+END_VAR
+VAR
+    Ready                      : BOOL;
+    limitedCommand             : DUT_MotorDriverCommand;
+    i                          : INT;
+    axisIndex                  : UINT;
+    axisIndexInt               : INT;
+    axisBit                    : WORD;
+    overrideAxisValid          : BOOL;
+    copleyFaultByAxis          : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF BOOL;
+    copleyFault                : BOOL;
+    overrideRequired           : BOOL;
+    positionDeltaCount         : LREAL;
+    referenceAngleRad          : LREAL;
+    thetaCmd                   : LREAL;
+    aggregateMask              : WORD;
+    aggregateActualDint        : DINT;
+    aggregateOutputDint        : DINT;
+    aggregateActual            : INT;
+    aggregateOutput            : INT;
+    statusActualDint           : DINT;
+    statusActualNumerator      : DINT;
+    statusActualDenominator    : DINT;
+    statusActual               : INT;
+    scaledTorqueDint           : DINT;
+    statusWordAggregate        : WORD;
+    feedbackStatusWord         : WORD;
+    statusStateBits            : WORD;
+    axisStateMasked            : WORD;
+    minimumStateRank           : INT;
+    axisStateRank              : INT;
+    anyFaultReactionActive     : BOOL;
+    anyFaultState              : BOOL;
+    anyQuickStopActive         : BOOL;
+    registeredReferencesValid  : BOOL;
+    normalAxisActive           : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF BOOL;
+    torqueAxisLinked           : ARRAY [1..GVL_MotorRuntimeInternal.AXIS_COUNT] OF BOOL;
+    activeAxisCount            : DINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[axisIndex := 1;
+overrideAxisValid := TRUE;
+copleyFault := FALSE;
+minimumStateRank := 32767;
+anyFaultReactionActive := FALSE;
+anyFaultState := FALSE;
+anyQuickStopActive := FALSE;
+registeredReferencesValid := TRUE;
+activeAxisCount := 0;
+
+IF CommutationOverride.enable THEN
+    IF (CommutationOverride.axis_index < 1) OR (CommutationOverride.axis_index > GVL_MotorRuntimeInternal.AXIS_COUNT) THEN
+        overrideAxisValid := FALSE;
+    ELSE
+        axisIndex := CommutationOverride.axis_index;
+    END_IF
+END_IF
+
+overrideRequired := CommutationOverride.enable;
+axisIndexInt := UINT_TO_INT(axisIndex);
+
+limitedCommand := Command;
+// Private commissioning commands already use the physical 0.1 A / 1000
+// representation. Convert only the public virtual-CST rated-torque command.
+IF NOT overrideRequired THEN
+    scaledTorqueDint :=
+        INT_TO_DINT(Command.TargetTorque)
+        * GVL_MotorRuntimeInternal.VIRTUAL_RATED_TORQUE_EQUIVALENT_CURRENT_MA
+        / GVL_MotorRuntimeInternal.COPLEY_INTERNAL_CURRENT_MA_PER_1000_COUNT;
+    IF scaledTorqueDint > 32767 THEN
+        limitedCommand.TargetTorque := DINT_TO_INT(32767);
+    ELSIF scaledTorqueDint < -32768 THEN
+        limitedCommand.TargetTorque := DINT_TO_INT(-32768);
+    ELSE
+        limitedCommand.TargetTorque := DINT_TO_INT(scaledTorqueDint);
+    END_IF
+END_IF
+
+FOR i := 1 TO UINT_TO_INT(GVL_MotorRuntimeInternal.AXIS_COUNT) DO
+    normalAxisActive[i] :=
+        (i <= 2)
+        OR GVL_MotorRuntimeInternal.NORMAL_FOUR_AXIS_ENABLED;
+    torqueAxisLinked[i] :=
+        normalAxisActive[i]
+        AND (EncoderPositionActualRaw >= GVL_MotorRuntimeInternal.TORQUE_LINKAGE_LOWER_COUNT[i]
+            - GVL_MotorRuntimeInternal.TORQUE_LINKAGE_MARGIN_COUNT)
+        AND (EncoderPositionActualRaw <= GVL_MotorRuntimeInternal.TORQUE_LINKAGE_UPPER_COUNT[i]
+            + GVL_MotorRuntimeInternal.TORQUE_LINKAGE_MARGIN_COUNT);
+    CopleyControlWord[i] := WORD#16#0000;
+    CopleyTargetTorque[i] := 0;
+    CopleyCommutationAngle[i] := 0;
+
+    copleyFaultByAxis[i] :=
+        (CopleyStatusWord[i] AND WORD#16#0008) <> WORD#16#0000;
+    IF normalAxisActive[i] THEN
+        activeAxisCount := activeAxisCount + 1;
+        registeredReferencesValid :=
+            registeredReferencesValid AND RegisteredReferenceValid[i];
+        axisStateMasked := CopleyStatusWord[i] AND WORD#16#006F;
+        IF (CopleyStatusWord[i] AND WORD#16#004F) = WORD#16#000F THEN
+            anyFaultReactionActive := TRUE;
+            axisStateRank := 0;
+        ELSIF (CopleyStatusWord[i] AND WORD#16#004F) = WORD#16#0008 THEN
+            anyFaultState := TRUE;
+            axisStateRank := 0;
+        ELSIF axisStateMasked = WORD#16#0007 THEN
+            anyQuickStopActive := TRUE;
+            axisStateRank := 0;
+        ELSIF (CopleyStatusWord[i] AND WORD#16#004F) = WORD#16#0040 THEN
+            axisStateRank := 1;
+        ELSIF axisStateMasked = WORD#16#0021 THEN
+            axisStateRank := 2;
+        ELSIF axisStateMasked = WORD#16#0023 THEN
+            axisStateRank := 3;
+        ELSIF axisStateMasked = WORD#16#0027 THEN
+            axisStateRank := 4;
+        ELSE
+            axisStateRank := 0;
+        END_IF
+        IF axisStateRank < minimumStateRank THEN
+            minimumStateRank := axisStateRank;
+        END_IF
+    END_IF
+END_FOR
+
+copleyFault := FALSE;
+IF overrideRequired AND overrideAxisValid THEN
+    copleyFault := copleyFaultByAxis[axisIndexInt];
+ELSE
+    FOR i := 1 TO UINT_TO_INT(GVL_MotorRuntimeInternal.AXIS_COUNT) DO
+        IF normalAxisActive[i] THEN
+            copleyFault := copleyFault OR copleyFaultByAxis[i];
+        END_IF
+    END_FOR
+END_IF
+
+IF overrideRequired THEN
+    Ready :=
+        NOT copleyFault
+        AND overrideAxisValid;
+ELSE
+    Ready := registeredReferencesValid;
+END_IF
+Fault := FALSE;
+FaultId := 0;
+
+IF NOT overrideAxisValid THEN
+    Fault := TRUE;
+    FaultId := 611; // invalid commutation override axis
+ELSIF copleyFault THEN
+    Fault := TRUE;
+    FaultId := 506; // physical drive fault
+ELSIF NOT overrideRequired
+      AND NOT registeredReferencesValid
+      AND ((Command.ControlWord <> WORD#16#0000)
+           OR (Command.TargetTorque <> 0)) THEN
+    Fault := TRUE;
+    FaultId := 612; // normal reference not registered for every active axis
+END_IF
+
+FOR i := 1 TO UINT_TO_INT(GVL_MotorRuntimeInternal.AXIS_COUNT) DO
+    IF overrideRequired AND overrideAxisValid AND (i = axisIndexInt) THEN
+        // Commissioning is deliberately isolated from the retained normal-CST
+        // references and only drives its explicitly selected physical axis.
+        // Convert before subtraction so the full DINT endpoint delta is safe.
+        positionDeltaCount :=
+            DINT_TO_LREAL(EncoderPositionActualRaw)
+            - DINT_TO_LREAL(
+                CommissioningReference[i].reference_position_count);
+        referenceAngleRad :=
+            UINT_TO_LREAL(
+                CommissioningReference[i].reference_commutation_angle)
+            * 6.2831853071795864769 / 65536.0;
+
+        thetaCmd := F_ArchWrap2Pi(
+            referenceAngleRad
+            + INT_TO_LREAL(CommissioningReference[i].electrical_direction)
+              * 6.2831853071795864769 * positionDeltaCount
+              / DINT_TO_LREAL(GVL_MotorRuntimeInternal.COUNTS_PER_ELECTRICAL_PERIOD)
+            + CommutationOverride.angle_offset_rad);
+        CopleyCommutationAngle[i] := F_ArchRadToCstcaAngle(thetaCmd);
+    ELSIF NOT overrideRequired AND Ready AND normalAxisActive[i] THEN
+        // Normal CST starts only after every active axis record was registered
+        // and read back. Each active axis still uses only its own record.
+        positionDeltaCount :=
+            DINT_TO_LREAL(EncoderPositionActualRaw)
+            - DINT_TO_LREAL(RegisteredReference[i].reference_position_count);
+        referenceAngleRad :=
+            UINT_TO_LREAL(RegisteredReference[i].reference_commutation_angle)
+            * 6.2831853071795864769 / 65536.0;
+        thetaCmd := F_ArchWrap2Pi(
+            referenceAngleRad
+            + INT_TO_LREAL(RegisteredReference[i].electrical_direction)
+              * 6.2831853071795864769 * positionDeltaCount
+              / DINT_TO_LREAL(GVL_MotorRuntimeInternal.COUNTS_PER_ELECTRICAL_PERIOD));
+        CopleyCommutationAngle[i] := F_ArchRadToCstcaAngle(thetaCmd);
+    END_IF
+END_FOR
+
+IF overrideRequired THEN
+    IF Ready THEN
+        CopleyControlWord[axisIndexInt] := limitedCommand.ControlWord;
+        CopleyTargetTorque[axisIndexInt] := limitedCommand.TargetTorque;
+    END_IF
+ELSIF Ready THEN
+    // Keep every configured drive enabled and commutated, but apply torque only
+    // while its motor core is linked to the shared mover. Overlapping windows
+    // keep both neighboring cores active through each measured transition.
+    FOR i := 1 TO UINT_TO_INT(GVL_MotorRuntimeInternal.AXIS_COUNT) DO
+        IF normalAxisActive[i] THEN
+            CopleyControlWord[i] := limitedCommand.ControlWord;
+            IF torqueAxisLinked[i] THEN
+                CopleyTargetTorque[i] := limitedCommand.TargetTorque;
+            END_IF
+        END_IF
+    END_FOR
+END_IF
+
+aggregateMask := WORD#16#0000;
+IF overrideRequired AND overrideAxisValid THEN
+    aggregateMask := SHL(WORD#16#0001, axisIndexInt - 1);
+ELSE
+    FOR i := 1 TO UINT_TO_INT(GVL_MotorRuntimeInternal.AXIS_COUNT) DO
+        IF normalAxisActive[i] THEN
+            aggregateMask := aggregateMask OR SHL(WORD#16#0001, i - 1);
+        END_IF
+    END_FOR
+END_IF
+
+aggregateActualDint := 0;
+aggregateOutputDint := 0;
+statusActualDint := 0;
+FOR i := 1 TO UINT_TO_INT(GVL_MotorRuntimeInternal.AXIS_COUNT) DO
+    IF normalAxisActive[i] THEN
+        statusActualDint :=
+            statusActualDint + INT_TO_DINT(CopleyActualCurrentCount[i]);
+    END_IF
+    axisBit := SHL(WORD#16#0001, i - 1);
+    IF (aggregateMask AND axisBit) <> WORD#16#0000 THEN
+        aggregateActualDint := aggregateActualDint + INT_TO_DINT(CopleyActualCurrentCount[i]);
+        aggregateOutputDint := aggregateOutputDint + INT_TO_DINT(CopleyTargetTorque[i]);
+    END_IF
+END_FOR
+
+// The public virtual drive represents the configured active axes, not their
+// sum. Convert their average physical current count back to rated torque / 1000,
+// with symmetric rounding around zero.
+statusActualNumerator :=
+    statusActualDint
+    * GVL_MotorRuntimeInternal.COPLEY_INTERNAL_CURRENT_MA_PER_1000_COUNT;
+statusActualDenominator :=
+    activeAxisCount
+    * GVL_MotorRuntimeInternal.VIRTUAL_RATED_TORQUE_EQUIVALENT_CURRENT_MA;
+IF statusActualNumerator >= 0 THEN
+    statusActualNumerator := statusActualNumerator + statusActualDenominator / 2;
+ELSE
+    statusActualNumerator := statusActualNumerator - statusActualDenominator / 2;
+END_IF
+statusActual := DINT_TO_INT(statusActualNumerator / statusActualDenominator);
+
+IF aggregateActualDint > 32767 THEN
+    aggregateActual := DINT_TO_INT(32767);
+ELSIF aggregateActualDint < -32768 THEN
+    aggregateActual := DINT_TO_INT(-32768);
+ELSE
+    aggregateActual := DINT_TO_INT(aggregateActualDint);
+END_IF
+
+IF aggregateOutputDint > 32767 THEN
+    aggregateOutput := DINT_TO_INT(32767);
+ELSIF aggregateOutputDint < -32768 THEN
+    aggregateOutput := DINT_TO_INT(-32768);
+ELSE
+    aggregateOutput := DINT_TO_INT(aggregateOutputDint);
+END_IF
+
+// The public virtual drive reports one canonical CiA 402 state value. Copley
+// auxiliary/manufacturer bits (for example 0x1600) remain available in the
+// private per-axis diagnostics, but must not obscure the public state. A
+// lagging or faulted active axis therefore remains visible without leaking
+// drive-specific bits into the virtual-CST boundary. Inactive axes are private.
+IF anyFaultReactionActive THEN
+    statusStateBits := WORD#16#000F;
+ELSIF anyFaultState THEN
+    statusStateBits := WORD#16#0008;
+ELSIF anyQuickStopActive THEN
+    statusStateBits := WORD#16#0007;
+ELSIF minimumStateRank >= 4 THEN
+    statusStateBits := WORD#16#0027;
+ELSIF minimumStateRank = 3 THEN
+    statusStateBits := WORD#16#0023;
+ELSIF minimumStateRank = 2 THEN
+    statusStateBits := WORD#16#0021;
+ELSIF minimumStateRank = 1 THEN
+    statusStateBits := WORD#16#0040;
+ELSE
+    statusStateBits := WORD#16#0000;
+END_IF
+statusWordAggregate := statusStateBits;
+
+// Private commissioning feedback remains scoped to its selected physical axis.
+IF overrideRequired AND overrideAxisValid THEN
+    feedbackStatusWord := CopleyStatusWord[axisIndexInt];
+ELSE
+    feedbackStatusWord := statusWordAggregate;
+END_IF
+// Public CiA 402 fault bit 3 reflects only a physical Copley fault aggregated
+// above. Internal runtime safety faults stay private in Feedback/FaultId; they
+// cannot be cleared by a drive reset and must not force MotorDriver to 0x0080.
+
+Status.StatusWord := statusWordAggregate;
+Status.PositionActualValue := EncoderPositionActualRaw;
+Status.VelocityActualValue := EncoderVelocityActualRaw;
+Status.TorqueActualValue := statusActual;
+
+Feedback.encoder_position_raw := EncoderPositionActualRaw;
+Feedback.encoder_velocity_raw := EncoderVelocityActualRaw;
+Feedback.copley_statusword := feedbackStatusWord;
+Feedback.copley_actual_current_count := aggregateActual;
+Feedback.output_torque_count := aggregateOutput;
+Feedback.fault_id := FaultId;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

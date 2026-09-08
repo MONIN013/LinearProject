@@ -3,12 +3,15 @@
 %[text] ### STEP 1: CHIRP EXCITATION
 %[text] load settings for the experiment
 clear; close all;
-load("config/data/config.mat");
-load("config/data/pana_params.mat"); 
+projectRoot = fileparts(fileparts(mfilename("fullpath")));
+addpath(projectRoot);
+projectRoot = setup_project();
+load(fullfile(projectRoot, "config", "data", "config.mat"));
+load(fullfile(projectRoot, "config", "data", "pana_params.mat"));
 %%
 %[text] build simulink model "twomass\_exp\_2019a.slx" after executing this section
 %[text] (build only needed 1 time.  rebuild required if you change the following parameters /or the feedback controller Kd.)
-load('config/data/ms_q.mat');
+load(fullfile(projectRoot, "config", "data", "ms_q.mat"));
 feedbackFlag = 1;
 Ts = 1.25e-4; % sampling time (don't change)
 Kd = tf(0.06,1); % open-loop system identification
@@ -28,11 +31,11 @@ plot(t,u); %[output:2f9b2e6c]
 set_ff = u;
 set_ref = zeros(N,1);
 
-open(ModelName);
+open(fullfile(projectRoot, ModelName));
 %%
 %[text] execute experiment via simulink
 %[text] \*make sure to close all simulink files before executing this section
-open(ModelName)
+open(fullfile(projectRoot, ModelName))
 obtainMeasurement; %[output:424cb541]
 %%
 count = measurement(1,:); % data counts
@@ -49,13 +52,17 @@ title('position output'); %[output:38c5b8fb]
 xlabel('time/s'); %[output:38c5b8fb]
 ylabel('position/m'); %[output:38c5b8fb]
 
-f = my_save_mat("multsin_result","input","output","Ts","Tend","ms", "periods"); %[output:5162568c]
+multsineResult = struct("input", input, "output", output, "Ts", Ts, ...
+    "Tend", Tend, "ms", ms, "periods", periods, ...
+    "measurement_metadata", measurement_metadata, ...
+    "measurement_source_path", measurement_source_path);
+f = save_experiment_result(runDir, "multsin_result", multsineResult); %[output:5162568c]
 %%
 %[text] ### STEP 2: TIME TREATMENT
 %[text] download data
 % load(f);
 % load("multsin_result_2026-07-25_6.mat");
-load("config/data/config.mat","bop");
+load(fullfile(projectRoot, "config", "data", "config.mat"), "bop");
 %%
 %[text] remove transient periods
 trans = 3;                      % number of transient periods
@@ -95,7 +102,6 @@ bode_fdi({Pest_v(1,1)},[Pest_v.freq,Pest_v.UserData.sGhat(:,1)]); %[output:3726e
 legend('FRF','sGhat'); %[output:3726e492]
 Pd_velocity = Pest_v(1,1);
 Pd_velocity.Ts = Ts;
-% my_save_mat("plant_velocity","Pd_velocity");
 %%
 figure;
 bode_fdi({Pest_tor(1,1)},[Pest_tor.freq,Pest_tor.UserData.sGhat(:,1)]); %[output:32017049]
@@ -148,9 +154,11 @@ bode(Pd,Pdn,bop_); %[output:50bb090b]
 legend(["$P_{d}$","$P_{n}$"],"Interpreter","latex"); %[output:50bb090b]
 %%
 %[text] save fitting data
-my_save_mat("plant_coplay_core2","Pd","Pdn","Jn","Dn","Ndelay","Ts"); %[output:09f12dd6]
+plantResult = struct("Pd", Pd, "Pdn", Pdn, "Jn", Jn, "Dn", Dn, ...
+    "Ndelay", Ndelay, "Ts", Ts);
+save_experiment_plant(runDir, plantResult); %[output:09f12dd6]
 %%
-load("plant.mat");
+load(fullfile(projectRoot, "data", "plants", "8khz", "current.mat"));
 
 Pdn = c2d(1/(Jn*s+Dn)/s,Ts,"tustin")/z^Ndelay;
 
@@ -165,7 +173,8 @@ bode(Pd,Pdn,bop_); %[output:88d726c1]
 % bode(Pd_velocity*c2d(1/s, Ts, "tustin"),Pdn,bop_);
 legend(["$P_{d}$","$P_{n}$"],"Interpreter","latex"); %[output:88d726c1]
 %%
-S1 = load("plant_5.6006998_2026-05-07.mat"); %[output:7a745d1a]
+S1 = load(fullfile(projectRoot, "data", "plants", "8khz", ...
+    "plant_coplay_core2_2026-08-08.mat")); %[output:7a745d1a]
 
 Pdn_si = c2d(1/(S1.Jn*s+S1.Dn)/s,Ts,"tustin")/z^S1.Ndelay;
 
@@ -179,6 +188,7 @@ figure;
 bode(S1.Pd,Pd,bop_);
 % bode(Pd_velocity*c2d(1/s, Ts, "tustin"),Pdn,bop_);
 legend(["Pana","Coplay"],"Interpreter","latex");
+save_experiment_figures(runDir, findall(groot, "Type", "figure"));
 
 %[appendix]{"version":"1.0"}
 %---

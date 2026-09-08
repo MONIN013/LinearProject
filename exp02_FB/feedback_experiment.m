@@ -2,9 +2,9 @@
 %[text] use PID Controller and compare the performance.
 %%
 clear; close all;
-run("config/config.m");
-projectRoot = pwd;
-load("config/data/pana_params.mat");
+projectRoot = fileparts(fileparts(mfilename("fullpath")));
+run(fullfile(projectRoot, "config", "config.m"));
+load(fullfile(projectRoot, "config", "data", "pana_params.mat"));
 
 %%
 %[text] ### STEP 1: Design Controller
@@ -83,7 +83,7 @@ subplot(3,1,3), plot(traj.time, traj.acc),  title('Acceleration'), grid on %[out
 %[text] Rebuild and redeploy after changing sampleRateHz, the trajectory, or Kd. Set the TwinCAT task to Ts before operating the stage.
 set_ff = zeros(N,1);
 set_ref = r;
-open(ModelName)
+open(fullfile(projectRoot, ModelName))
 slbuild(model) %[output:728a5d21] %[output:1f4b209d] %[output:25d51c83]
 builtSamplePeriod = Ts;
 builtModel = ModelName;
@@ -93,7 +93,7 @@ save(fullfile(projectRoot, "config", "data", "feedback_build_info.mat"), ...
 %%
 %[text] execute experiment via simulink
 %[text] \*make sure to close all simulink files before executing this section
-open(ModelName)
+open(fullfile(projectRoot, ModelName))
 obtainMeasurement; %[output:1459d898]
 t = measurement_time;
 y = measurement(5,:); % output position [m]
@@ -106,16 +106,18 @@ torque = measurement(7,:);
 figure; plot(diff(y)/Ts) %[output:187f4fb0]
 %%
 %[text] save experiment data
-f = my_save_mat("position_feedback_result", "t", "r", "y", "e", ... %[output:group:792bc5e0] %[output:2f6a697e]
-    "u", "v", "Kd", "torque", "Ts", "plantPath", ... %[output:2f6a697e]
-    "measurement_metadata", "measurement_source_path"); %[output:group:792bc5e0] %[output:2f6a697e]
+feedbackResult = struct("t", t, "r", r, "y", y, "e", e, "u", u, ...
+    "v", v, "Kd", Kd, "torque", torque, "Ts", Ts, ...
+    "plantPath", plantPath, "measurement_metadata", measurement_metadata, ...
+    "measurement_source_path", measurement_source_path);
+f = save_experiment_result(runDir, "position_feedback_result", feedbackResult); %[output:group:792bc5e0] %[output:2f6a697e]
 %%
 %[text] ### STEP 3: Analyze the results of the experiment
 %[text] download data
 load(f);
 assert(exist("Ts", "var") == 1, ...
     "The result file must contain Ts for sample-rate-safe analysis.");
-load("config/data/config.mat","bop");
+load(fullfile(projectRoot, "config", "data", "config.mat"), "bop");
 %%
 %[text] plot tracking result of feedback control
 figure; %[output:341395e5]
@@ -140,6 +142,7 @@ xlim([0,max(t)]); %[output:341395e5]
 grid on; %[output:341395e5]
 
 linkaxes(ax, 'x'); %[output:341395e5]
+save_experiment_figures(runDir, gcf);
 %%
 %[text] display error norm
 norm(e) %[output:9d344e4a]
@@ -157,6 +160,7 @@ plot(-x,-(u_fwd+u_ret)/2,-x,(u_fwd-u_ret)/2); %[output:29e61710]
 xlabel("Position [m]"); ylabel("Input [A]"); %[output:29e61710]
 legend("(forward + return)/2","(forward - return)/2"); %[output:29e61710]
 grid on; %[output:29e61710]
+save_experiment_figures(runDir, findall(groot, "Type", "figure"));
 
 
 %[appendix]{"version":"1.0"}

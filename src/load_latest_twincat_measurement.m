@@ -7,7 +7,7 @@ function [measurement, measurementTimeRaw, measurementTime, matPath, metadata] =
 % v2/v3 and the ten-signal feedforward v1 layout.
 
 if nargin < 1 || strlength(string(dataDir)) == 0
-    dataDir = fullfile("simulink", "data");
+    dataDir = fullfile(fileparts(fileparts(mfilename('fullpath'))), "simulink", "data");
 end
 if nargin < 2 || isempty(samplePeriod)
     samplePeriod = 0.000125;

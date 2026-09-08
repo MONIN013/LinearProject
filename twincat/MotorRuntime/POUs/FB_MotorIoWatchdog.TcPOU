@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_MotorIoWatchdog" Id="{2d8a30a6-bf58-4fa4-b284-8673392d3779}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MotorIoWatchdog
+VAR_INPUT
+    TaskPeriod_s       : LREAL := 0.00025;
+    ToggleTimeout_s    : LREAL := 0.010;
+    EncoderWcState     : BOOL;
+    EncoderInputToggle : BOOL;
+    EncoderReady       : BOOL;
+    EncoderError       : BOOL;
+    EncoderTxPdoState  : BOOL;
+    CopleyWcState      : BOOL;
+    CopleyInputToggle  : BOOL;
+    Copley2WcState     : BOOL;
+    Copley2InputToggle : BOOL;
+    ResetRequest       : BOOL;
+    CommandIsZero      : BOOL;
+END_VAR
+VAR_OUTPUT
+    SafeToDrive                 : BOOL;
+    Fault                       : BOOL;
+    FaultId                     : UDINT;
+END_VAR
+VAR
+    EncoderInputStaleCycles  : UDINT;
+    CopleyInputStaleCycles   : UDINT;
+    Copley2InputStaleCycles  : UDINT;
+    lastEncoderInputToggle   : BOOL;
+    lastCopleyInputToggle    : BOOL;
+    lastCopley2InputToggle   : BOOL;
+    encoderToggleSeen        : BOOL;
+    copleyToggleSeen         : BOOL;
+    copley2ToggleSeen        : BOOL;
+    encoderToggleHealthy     : BOOL;
+    copleyToggleHealthy      : BOOL;
+    copley2ToggleHealthy     : BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF EncoderInputToggle <> lastEncoderInputToggle THEN
+    EncoderInputStaleCycles := 0;
+    encoderToggleSeen := TRUE;
+    lastEncoderInputToggle := EncoderInputToggle;
+ELSIF EncoderInputStaleCycles < UDINT#16#FFFFFFFF THEN
+    EncoderInputStaleCycles := EncoderInputStaleCycles + 1;
+END_IF
+
+IF CopleyInputToggle <> lastCopleyInputToggle THEN
+    CopleyInputStaleCycles := 0;
+    copleyToggleSeen := TRUE;
+    lastCopleyInputToggle := CopleyInputToggle;
+ELSIF CopleyInputStaleCycles < UDINT#16#FFFFFFFF THEN
+    CopleyInputStaleCycles := CopleyInputStaleCycles + 1;
+END_IF
+
+IF Copley2InputToggle <> lastCopley2InputToggle THEN
+    Copley2InputStaleCycles := 0;
+    copley2ToggleSeen := TRUE;
+    lastCopley2InputToggle := Copley2InputToggle;
+ELSIF Copley2InputStaleCycles < UDINT#16#FFFFFFFF THEN
+    Copley2InputStaleCycles := Copley2InputStaleCycles + 1;
+END_IF
+
+encoderToggleHealthy :=
+    encoderToggleSeen
+    AND (UDINT_TO_LREAL(EncoderInputStaleCycles) * TaskPeriod_s <= ToggleTimeout_s);
+copleyToggleHealthy :=
+    copleyToggleSeen
+    AND (UDINT_TO_LREAL(CopleyInputStaleCycles) * TaskPeriod_s <= ToggleTimeout_s);
+copley2ToggleHealthy :=
+    copley2ToggleSeen
+    AND (UDINT_TO_LREAL(Copley2InputStaleCycles) * TaskPeriod_s <= ToggleTimeout_s);
+
+// The first fault is retained so post-mortem data identifies the initiating
+// slave. Re-arming requires valid telegrams and an explicit zero command.
+IF NOT Fault THEN
+    IF EncoderWcState OR EncoderTxPdoState
+       OR (encoderToggleSeen AND (EncoderError OR NOT EncoderReady)) THEN
+        Fault := TRUE;
+        FaultId := 620; // Encoder EtherCAT process data invalid
+    ELSIF CopleyWcState OR Copley2WcState THEN
+        Fault := TRUE;
+        FaultId := 622; // Copley EtherCAT process data invalid
+    ELSIF NOT encoderToggleHealthy
+          AND (UDINT_TO_LREAL(EncoderInputStaleCycles) * TaskPeriod_s > ToggleTimeout_s) THEN
+        Fault := TRUE;
+        FaultId := 621; // Encoder valid input telegram stale
+    ELSIF NOT copleyToggleHealthy
+          AND (UDINT_TO_LREAL(CopleyInputStaleCycles) * TaskPeriod_s > ToggleTimeout_s) THEN
+        Fault := TRUE;
+        FaultId := 623; // Copley valid input telegram stale
+    ELSIF NOT copley2ToggleHealthy
+          AND (UDINT_TO_LREAL(Copley2InputStaleCycles) * TaskPeriod_s > ToggleTimeout_s) THEN
+        Fault := TRUE;
+        FaultId := 623; // Copley valid input telegram stale
+    END_IF
+ELSIF ResetRequest
+      AND CommandIsZero
+      AND NOT EncoderWcState
+      AND NOT EncoderTxPdoState
+      AND EncoderReady
+      AND NOT EncoderError
+      AND NOT CopleyWcState
+      AND NOT Copley2WcState
+      AND encoderToggleHealthy
+      AND copleyToggleHealthy
+      AND copley2ToggleHealthy THEN
+    Fault := FALSE;
+    FaultId := 0;
+END_IF
+
+SafeToDrive :=
+    NOT Fault
+    AND NOT EncoderWcState
+    AND NOT EncoderTxPdoState
+    AND EncoderReady
+    AND NOT EncoderError
+    AND NOT CopleyWcState
+    AND NOT Copley2WcState
+    AND encoderToggleHealthy
+    AND copleyToggleHealthy
+    AND copley2ToggleHealthy;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>
