@@ -1,8 +1,11 @@
 function obs = observations(trials, grid, o)
-%OBSERVATIONS Position-aligned measured kinematics and total commanded current.
-% Each element is one validated round trip (decode output). Assign profile_id
-% before data collection; repeats keep that ID. Even repeated references with
-% a new name cannot cross train/validation/test boundaries.
+%OBSERVATIONS Position-aligned measured kinematics and identification current.
+% TRAIN data must come from accelff.accept_ilc_teacher: the target is the
+% converged learned ILC FF [A], matching the thesis decomposition. It is NOT
+% raw feedback-only current and NOT row-3 total command. Validation/test may
+% retain command_A for diagnostic prediction but fit_map accepts train only.
+% Each element is one validated round trip. Assign profile_id before data
+% collection; repeats keep that ID. Identical references cannot cross splits.
 % Local cubic differentiation is OFFLINE and noncausal. Edges are discarded.
 % Pair mechanical sample k with current(k+offset); negative offset means an
 % earlier current. The row-9 logging delay does not belong in this parameter.
@@ -16,10 +19,20 @@ assert(~isempty(trials),'accelff:NoTrials','No validated trials were supplied.')
 ids = strings(numel(trials),1);
 for q=1:numel(trials)
     tr=trials(q); ids(q)=tr.id;
-    assert(isequal(tr.quality_passed,true) && string(tr.current_kind)=="command_A", ...
-        'accelff:Quality','Only validated current-command captures are accepted.');
+    assert(isequal(tr.quality_passed,true), ...
+        'accelff:Quality','Only validated captures are accepted.');
     assert(ismember(string(tr.split),["train","validation","test"]), ...
         'accelff:Split','Unknown split.');
+    if string(tr.split)=="train"
+        assert(string(tr.current_kind)=="ilc_ff_A" && ...
+            string(tr.method)=="ilc_teacher" && ...
+            isfield(tr,'ilc_teacher_converged') && isequal(tr.ilc_teacher_converged,true), ...
+            'accelff:TeacherRequired', ...
+            'Training observations require a converged ILC learned-FF teacher.');
+    else
+        assert(ismember(string(tr.current_kind),["command_A","ilc_ff_A"]), ...
+            'accelff:CurrentKind','Unknown current signal kind.');
+    end
     for h=1:q-1
         sameReference = isequal(tr.Ts,trials(h).Ts) && isequal(tr.r,trials(h).r);
         sameProfile = string(tr.profile_id)==string(trials(h).profile_id);
@@ -31,7 +44,7 @@ for q=1:numel(trials)
 end
 assert(numel(unique(ids))==numel(ids),'accelff:Duplicate','Repeated trial ID.');
 assert(isequal(o.alignment_reviewed,true),'accelff:AlignmentUnverified', ...
-    'Verify command-to-motion alignment before producing identification observations.');
+    'Verify learned-FF-to-motion alignment before producing identification observations.');
 % Explicitly typed empty table remains usable when no positions overlap.
 obs=table('Size',[0,7],'VariableTypes', ...
     {'double','double','double','double','string','string','string'}, ...
