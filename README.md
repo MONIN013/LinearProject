@@ -3,6 +3,11 @@
 MATLAB R2025aでルートの `setup_project` を実行する。共通関数をpathへ追加し、実機接続やビルドは行わない。
 TwinCATは Visual Studio 2019で `twincat/NikonMotorProject2025.sln` を開く。
 
+100 MiBを超える過去のFB計測MAT 2件はGit LFSで管理する。
+クローン後は `git lfs install` と `git lfs pull` を実行して実体を取得する。
+実機ライセンス、ローカルarming設定、TwinCAT生成物、`data/ff/integration_*/` の
+生計測はGit管理対象外。今回の実験結果は `docs/ff-verification-2026-09-08.md` に記録した。
+
 - `exp00_Commissioning/`: 磁極推定の操作。`config/copley/` に設定、`src/+copley/` に通信・推定処理。
 - `exp01_SI/`、`exp02_FB/`、`exp03_FF/`、`exp04_ILC/`: 同定・FB・FF・ILC実験。
 - `src/`: 取得、Homing、解析、保存の共通関数。
