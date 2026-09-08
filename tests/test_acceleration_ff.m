@@ -91,9 +91,37 @@ function testObservationsRequireValidatedCapture(t)
 [job,m]=fixture(); tr=accelff.decode(m,job,1,1e-10);
 verifyError(t,@()accelff.observations(tr,[5.41;5.5],t.TestData.options),'accelff:Quality');
 end
+function testTrainRequiresILCTeacher(t)
+[job,m]=fixture(); tr=accelff.decode(m,job,1,1e-10); tr.quality_passed=true;
+verifyError(t,@()accelff.observations(tr,[5.41;5.5],t.TestData.options),'accelff:TeacherRequired');
+end
 function testAlignmentMustBeReviewed(t)
 [job,m]=fixture(); tr=accelff.decode(m,job,1,1e-10); tr.quality_passed=true;
+tr.method="ilc_teacher"; tr.current=tr.ff; tr.current_kind="ilc_ff_A";
+tr.ilc_teacher_converged=true;
 verifyError(t,@()accelff.observations(tr,[5.41;5.5],t.TestData.options),'accelff:AlignmentUnverified');
+end
+function testAcceptILCTeacherUsesLearnedFF(t)
+o=t.TestData.options; o.teacher_feedback_ratio=1; results=teacherSequence(6);
+teacher=accelff.accept_ilc_teacher(results,o);
+verifyEqual(t,teacher.current,results{end}.trace.ff);
+verifyEqual(t,teacher.current_kind,"ilc_ff_A");
+verifyTrue(t,teacher.ilc_teacher_converged);
+end
+function testTeacherRejectsChangingFF(t)
+o=t.TestData.options; o.teacher_ff_relative_change=1e-6; results=teacherSequence(6);
+verifyError(t,@()accelff.accept_ilc_teacher(results,o),'accelff:ILCTeacherNotConverged');
+end
+function testSummarizeILC(t)
+a=teacherSequence(3); b=teacherSequence(3); c=teacherSequence(3);
+for k=1:3
+    b{k}.trace.error=.8*b{k}.trace.error;
+    c{k}.trace.error=.5*c{k}.trace.error;
+end
+seq=struct('initializer',{"zero","thesis","acceleration"},'results',{a,b,c});
+s=accelff.summarize_ilc(seq,1e-3);
+verifyEqual(t,height(s.table),3);
+verifyLessThan(t,s.table.initial_rms_m(3),s.table.initial_rms_m(1));
 end
 function [job,m]=fixture()
 p=accelff.profile(.1,1,.2,.001,[.1,.1,.1]);
@@ -102,6 +130,19 @@ job=struct('id',"fixture",'profile_id',"fixture",'split',"train", ...
 n=numel(p.x); r=[0;p.x(1:end-1)]; v=[0;p.v(1:end-1)];
 m=zeros(10,n); m(1,:)=100+(0:n-1); m(3,:)=.3;
 m(4,:)=v'; m(5,:)=r'; m(8,:)=5.41+r'; m(9,:)=r';
+end
+function results=teacherSequence(n)
+[job,m]=fixture(); job.method="ilc_teacher"; job.profile_id="train01"; job.f=.2*ones(size(job.f));
+tr=accelff.decode(m,job,1,1e-10); tr.method="ilc_teacher"; tr.v_ref(:)=.1;
+results=cell(n,1);
+for k=1:n
+    f=job.f*(1+0.02/(k+2));
+    j=job; j.id="teacher_"+k; j.f=f;
+    q=tr; q.id=j.id; q.ff=f; q.current=f+.01; q.error=ones(size(f))*(1e-3*(1+0.01/(k+2)));
+    q.quality_passed=true;
+    results{k}=struct('status',"accepted",'job',j,'trace',q, ...
+        'config',struct('evaluation_velocity_floor',.002));
+end
 end
 function [obs,grid,b]=sampleObservations()
 grid=[0;1]; b=[.05,.2,.05,.3];
