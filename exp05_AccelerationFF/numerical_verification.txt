@@ -1,0 +1,19 @@
+Command: python tests/verify_acceleration_math.py
+Scope: Independent NumPy checks of mathematical equations only.
+Executed: 2026-09-08 in the authoring environment.
+
+PASS test_acceleration_confounding_is_detected
+PASS test_analytic_derivatives
+PASS test_candidate_profile_excitation_has_interior_rank
+PASS test_endpoints_and_monotonicity
+PASS test_feedforward_advance_is_applied_once
+PASS test_local_cubic_measured_differentiation
+PASS test_one_sample_logging_delay_is_not_circular
+PASS test_scaled_least_squares_recovers_four_coefficients
+PASS test_time_reversal_acceleration_is_even
+Ran 9 tests; OK.
+
+MATLAB function tests: 19 authored, NOT EXECUTED.
+Simulink/TwinCAT build and deployment: NOT EXECUTED.
+Hardware monitoring and motion: NOT EXECUTED.
+No claim of real-machine performance improvement.
