@@ -1,0 +1,18 @@
+{
+  "GVL_MotorRuntime.Status.PositionActualValue": 54100214,
+  "GVL_MotorRuntime.Status.VelocityActualValue": 0,
+  "GVL_MotorRuntime.Command.TargetTorque": 0,
+  "GVL_MotorRuntimeInternal.Feedback.fault_id": 0,
+  "PRG_MotorRuntime.fbIoWatchdog.SafeToDrive": true,
+  "PRG_MotorRuntime.taskPeriod_s": 0.00025,
+  "PRG_MotorRuntime.copleyStatusWordModule1": 5681,
+  "PRG_MotorRuntime.copleyTargetTorqueModule1": 0,
+  "PRG_MotorRuntime.copleyStatusWordModule2": 5681,
+  "PRG_MotorRuntime.copleyTargetTorqueModule2": 0,
+  "PRG_MotorRuntime.copleyStatusWordModule3": 5681,
+  "PRG_MotorRuntime.copleyTargetTorqueModule3": 0,
+  "PRG_MotorRuntime.copleyStatusWordModule4": 5681,
+  "PRG_MotorRuntime.copleyTargetTorqueModule4": 0,
+  "p_active": 0.0,
+  "p_servo": 0.0
+}

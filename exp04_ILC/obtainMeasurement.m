@@ -16,6 +16,22 @@ if exist("velocitySweepEnabled", "var") && velocitySweepEnabled
     resultFiles = sweep.resultFiles;
     completedTrialsByVelocity = sweep.completedTrialsByVelocity;
     completedVelocities = sweep.completedVelocities;
+elseif exist("teacherSettings", "var") && ~isempty(teacherSettings)
+    teacherSettings.maxTrials = Ntrial;
+    if isfield(teacherSettings,'resumeFile')
+        resumeData = load(teacherSettings.resumeFile);
+        teacherSettings.startCount = resumeData.teacher.settings.startCount;
+        resumeRuntime = struct('Ts',Ts,'Fc',Fc,'Qsos',Qsos,'Qscale',Qscale, ...
+            'Kd',Kd,'Ndelay',Ndelay,'plantPath',plantPath);
+        [history,teacherSettings.firstTrial] = resume_ilc_teacher_history( ...
+            resumeData,traj,Ntrial,teacherSettings,resumeRuntime);
+        clear resumeData resumeRuntime
+    else
+        history = initialize_history(t, r, Ntrial);
+    end
+    [history, completedTrials, measurement] = run_ilc_trials( ...
+        string(modelName), history, Ntrial, N, t, Tend, Ts, fb, Gn0, ...
+        Qsos, Qscale, MAX_INPUT, false, ilcRunDir, "teacher", teacherSettings);
 else
     history = initialize_history(t, r, Ntrial);
     [history, completedTrials] = run_ilc_trials( ...
@@ -23,16 +39,31 @@ else
         Qsos, Qscale, MAX_INPUT, confirmEachTrial, ilcRunDir, "single");
 end
 
-function [history, completedTrials] = run_ilc_trials( ...
+function [history, completedTrials, measurement] = run_ilc_trials( ...
         model, history, Ntrial, N, t, Tend, Ts, fb, Gn0, ...
-        Qsos, Qscale, MAX_INPUT, confirmEachTrial, runDir, velocityTag)
+        Qsos, Qscale, MAX_INPUT, confirmEachTrial, runDir, velocityTag, teacherSettings)
+if nargin<16, teacherSettings = []; end
+if ~isempty(teacherSettings)
+    validateattributes(Ntrial, {'double'}, {'scalar','integer', ...
+        '>=',max(teacherSettings.minTrials,teacherSettings.window+1)});
+    assert(teacherSettings.maxInput==MAX_INPUT, ...
+        'NikonMotor:TeacherCurrentLimit', 'Teacher current limit must match the active controller.');
+    if isfield(teacherSettings,'averagingWindow')
+        validateattributes(teacherSettings.averagingWindow,{'double'},{'scalar','integer','>=',2});
+        validateattributes(teacherSettings.validationTrials,{'double'}, ...
+            {'scalar','integer','>=',teacherSettings.window+1});
+        assert(Ntrial>=max(2*teacherSettings.averagingWindow, ...
+            teacherSettings.averagingWindow+teacherSettings.window)+teacherSettings.validationTrials, ...
+            'NikonMotor:TeacherTrialsInsufficient','Allow enough trials for learning and fixed-FF validation.');
+    end
+end
 [dataDir, bufferCapacity] = prepare_external_mode(model, N, Ts);
 cleanupGuard = onCleanup(@()reset_disconnect_and_archive( ...
     model, N, bufferCapacity, dataDir, runDir, velocityTag, 0));
 connect_external_mode(model);
-[history, completedTrials] = run_ilc_trial_sequence( ...
+[history, completedTrials, measurement] = run_ilc_trial_sequence( ...
     model, history, Ntrial, t, Tend, Ts, fb, Gn0, Qsos, Qscale, ...
-    MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity, runDir, velocityTag);
+    MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity, runDir, velocityTag, teacherSettings);
 end
 
 function sweep = run_ilc_velocity_sweep( ...
@@ -111,11 +142,14 @@ function history = initialize_history(t, r, Ntrial)
 N = numel(r);
 history = struct( ...
     "t", t, ...
+    "reference", r(:), ...
+    "count", zeros(N, Ntrial), ...
     "r", repmat(r, 1, Ntrial), ...
     "y", zeros(N, Ntrial), ...
     "e", zeros(N, Ntrial), ...
     "eNorm", nan(1, Ntrial), ...
     "f", zeros(N, Ntrial), ...
+    "ff", zeros(N, Ntrial), ...
     "u", zeros(N, Ntrial), ...
     "y_absolute", zeros(N, Ntrial), ...
     "alpha", nan(1, Ntrial));
@@ -125,7 +159,11 @@ function [dataDir, bufferCapacity] = prepare_external_mode(model, N, Ts)
 projectRoot = fileparts(fileparts(mfilename("fullpath")));
 dataDir = fullfile(projectRoot, "simulink", "data");
 assert_target_built(projectRoot, "tunable_build_info.mat", Ts);
-set_param(model, "SimulationMode", "external");
+set_param(model, "SimulationMode", "external", ...
+    "ExtModeMexArgs", "'192.168.10.3.1.1' 0 16842784");
+Simulink.fileGenControl("set", ...
+    "CacheFolder", fullfile(projectRoot, "Cache"), ...
+    "CodeGenFolder", fullfile(projectRoot, "CodeGen"), "createDir", true);
 bufferCapacity = get_buffer_capacity(model);
 setvars(model, reset_values(N, bufferCapacity));
 end
@@ -137,22 +175,57 @@ set_param(model, "SimulationCommand", "start");
 pause(0.5);
 end
 
-function [history, completedTrials] = run_ilc_trial_sequence( ...
+function [history, completedTrials, measurement] = run_ilc_trial_sequence( ...
         model, history, Ntrial, t, Tend, Ts, fb, Gn0, ...
         Qsos, Qscale, MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity, ...
-        runDir, velocityTag)
-completedTrials = 0;
+        runDir, velocityTag, teacherSettings)
+if nargin<17, teacherSettings = []; end
+isTeacher = ~isempty(teacherSettings);
+firstTrial = 1;
+if isTeacher && isfield(teacherSettings,'firstTrial')
+    firstTrial = teacherSettings.firstTrial;
+    validateattributes(firstTrial,{'double'},{'scalar','integer','positive','<=',Ntrial});
+end
+completedTrials = firstTrial-1;
+measurement = [];
 progressFigure = gobjects(0);
-for iteration = 1:Ntrial
+try
+for iteration = firstTrial:Ntrial
     r = history.r(:, iteration);
     f = history.f(:, iteration);
+    if isTeacher
+        history.pre{iteration} = read_tunable_idle_state(Ts);
+        if iteration>1 && abs(history.pre{iteration}.positionCount-teacherSettings.startCount)>1000
+            % Each capture rebases relative position. Correct accumulated return
+            % drift with the existing absolute Homing, retaining the learned FF.
+            history.rehoming{iteration} = struct('before',history.pre{iteration});
+            reset_disconnect_and_archive(model,numel(r),bufferCapacity, ...
+                dataDir,runDir,velocityTag,iteration-1);
+            assert(string(get_param(model,'SimulationStatus'))=="stopped" && ...
+                string(get_param(model,'ExtModeConnected'))=="off", ...
+                'NikonMotor:HomingModelBusy', 'ILC must stop and disconnect before position correction.');
+            read_tunable_idle_state(Ts);
+            [~,history.rehoming{iteration}.homing] = home_to_start(teacherSettings.startCount);
+            [dataDir,bufferCapacity] = prepare_external_mode(model,numel(r),Ts);
+            connect_external_mode(model);
+            history.pre{iteration} = read_tunable_idle_state(Ts);
+            history.rehoming{iteration}.after = history.pre{iteration};
+        end
+        assert(abs(history.pre{iteration}.positionCount-teacherSettings.startCount)<=1000, ...
+            'NikonMotor:StartPositionChanged', 'ILC starting position changed; sequence stopped.');
+    end
     measurement = capture_trial( ...
         model, r, f, Tend, dataDir, Ts, bufferCapacity, runDir, ...
         velocityTag, iteration);
 
+    assert(isequal(size(measurement),[10,numel(r)]) && ...
+        all(isfinite(measurement),'all'), ...
+        'NikonMotor:InvalidCapture', 'Expected a finite 10-by-N capture.');
     count = measurement(1, :);
+    history.count(:, iteration) = count.';
     history.e(:, iteration) = measurement(2, :).';
     history.u(:, iteration) = measurement(3, :).';
+    history.ff(:, iteration) = measurement(7, :).';
     history.y(:, iteration) = measurement(5, :).';
     history.y_absolute(:, iteration) = measurement(8, :).';
     history.r(:, iteration) = measurement(9, :).';
@@ -168,18 +241,81 @@ for iteration = 1:Ntrial
     assert(isempty(lostPackages) && all(diff(count) == 1), ...
         "Measurement contains missing or out-of-order samples.");
 
+    if isTeacher
+        history.post{iteration} = read_tunable_idle_state(Ts);
+        history.teacher = evaluate_ilc_teacher( ...
+            history, iteration, teacherSettings.velocity, teacherSettings);
+        completedTrials = iteration;
+        save_experiment_result(runDir, "teacher_progress", struct( ...
+            "history", history, "completedTrials", completedTrials, "Ts", Ts));
+        fprintf("Teacher %d/%d: RMS %.1f um, FF change %.3g, FB/FF %.3g, saturated %d samples\n", ...
+            iteration, Ntrial, 1e6*history.teacher.errorRms(end), ...
+            history.teacher.ffRelativeChange(end), history.teacher.feedbackRatio(end), ...
+            history.teacher.saturatedSamples(end));
+        if history.teacher.converged || iteration==Ntrial
+            progressFigure = plot_progress(progressFigure,t,history,iteration,f,f);
+            break
+        end
+    end
+
     alpha = max(0.9^iteration, 0.3);
     history.alpha(iteration) = alpha;
-    learningCorrection = lsimFB(fb, history.e(:, iteration), t) ...
-        + lsimInvModel(Gn0, history.e(:, iteration));
-    fNext = filtfilt_clean(Qsos, Qscale, ...
-        f + alpha*learningCorrection);
+    meanErrorUpdate = isTeacher && history.teacher.meanUpdateReady;
+    if isTeacher && isfield(history,'validationStart') && ...
+            history.validationStart>0 && ...
+            any(history.teacher.saturatedSamples(history.validationStart:iteration)>0)
+        history.validationStart = 0;
+        history.learningStart = iteration+1;
+        history.teacher.validationReady = false;
+        fprintf('Fixed FF saturated; resuming ILC from trial %d.\n',iteration+1);
+    end
+    if meanErrorUpdate
+        ix = iteration-teacherSettings.validationTrials+1:iteration;
+        averaged = struct('t',t,'e',mean(history.e(:,ix),2), ...
+            'u',mean(history.u(:,ix),2),'f',mean(history.f(:,ix),2), ...
+            'teacher',history.teacher);
+        % Suppress error corrections near rest, where mean-error updates worsened
+        % the measured response. All samples remain in the accuracy checks.
+        learningWeight = min(max((abs(teacherSettings.velocity)-.02)/.08,0),1);
+        learningWeight = learningWeight.^2.*(3-2*learningWeight);
+        [fNext,history.constrainedUpdate{iteration}] = update_ilc_constrained( ...
+            averaged,1,Gn0,fb,Qsos,Qscale,MAX_INPUT,.6,learningWeight);
+        history.meanErrorTrials{iteration} = ix;
+        history.alpha(iteration) = history.constrainedUpdate{iteration}.rate;
+        history.validationStart = iteration+1;
+        history.validationStarts(end+1) = iteration+1;
+        fprintf('Mean-error ILC update from trials %d to %d; fixed validation starts at %d.\n', ...
+            ix(1),ix(end),iteration+1);
+    elseif isTeacher && isfield(history,'validationStart') && history.validationStart>0
+        history.alpha(iteration) = 0;
+        fNext = history.validationFF;
+    elseif isTeacher && history.teacher.validationReady
+        history.alpha(iteration) = 0;
+        w = teacherSettings.averagingWindow;
+        history.validationFF = mean(history.f(:,iteration-w+1:iteration),2);
+        history.validationStart = iteration+1;
+        if ~isfield(history,'validationStarts'), history.validationStarts = []; end
+        history.validationStarts(end+1) = history.validationStart;
+        fNext = history.validationFF;
+        fprintf('Fixed FF validation begins at trial %d, averaging trials %d to %d.\n', ...
+            iteration+1,iteration-w+1,iteration);
+    elseif isTeacher && any(history.teacher.saturatedSamples)
+        % Once clipping occurs, retain a current-constrained update for this
+        % sequence so unconstrained learning cannot reintroduce the excess.
+        [fNext, history.constrainedUpdate{iteration}] = update_ilc_constrained( ...
+            history,iteration,Gn0,fb,Qsos,Qscale,MAX_INPUT);
+    else
+        learningCorrection = lsimFB(fb, history.e(:, iteration), t) ...
+            + lsimInvModel(Gn0, history.e(:, iteration));
+        fNext = filtfilt_clean(Qsos, Qscale, f + alpha*learningCorrection);
+    end
 
     padding = round(0.025/Ts); % preserve the original 25 ms edge padding
     assert(numel(fNext) > 2*padding, ...
         "The ILC trajectory is too short for the edge padding.");
     fNext(1:padding) = fNext(padding+1);
     fNext(end-padding+1:end) = fNext(end-padding);
+    if meanErrorUpdate, history.validationFF = fNext; end
     completedTrials = iteration;
 
     progressFigure = plot_progress( ...
@@ -200,12 +336,25 @@ for iteration = 1:Ntrial
         if ~strcmp(choice, "yes"), break; end
     end
 end
+catch cause
+    if isTeacher
+        save_experiment_result(runDir, "teacher_failed", struct( ...
+            "history", history, "completedTrials", completedTrials, ...
+            "measurement", measurement, "failure", cause.message, ...
+            "failureId", cause.identifier, "Ts", Ts));
+    end
+    rethrow(cause);
+end
+if isTeacher && isgraphics(progressFigure)
+    save_experiment_figures(runDir,progressFigure);
+end
 end
 
 function measurement = capture_trial( ...
         model, r, f, Tend, dataDir, Ts, bufferCapacity, runDir, ...
         velocityTag, iteration)
-archive_measurement_parts(dataDir);
+archive_measurement_parts(dataDir, runDir, ...
+    fullfile("raw", velocityTag, sprintf("before_trial_%03d", iteration)));
 try
 
 runValues = prepare_tunable_trajectory_parameters(r, f, bufferCapacity);
@@ -276,7 +425,7 @@ nexttile; plot(t, history.e(:, iteration)); grid on;
 ylabel("Error [m]"); title(sprintf("Trial %d", iteration));
 nexttile; plot(t, f, t, fNext, "--"); grid on;
 ylabel("Feedforward [A]"); legend("Current", "Next");
-nexttile; plot(t, history.u(:, iteration)-f); grid on;
+nexttile; plot(t, history.u(:, iteration)-history.ff(:, iteration)); grid on;
 ylabel("Feedback [A]");
 nexttile; semilogy(0:iteration-1, history.eNorm(1:iteration), "-o");
 grid on; xlabel("Iteration"); ylabel("||e||_2");

@@ -10,6 +10,7 @@ TwinCATは Visual Studio 2019で `twincat/NikonMotorProject2025.sln` を開く�
 
 - `exp00_Commissioning/`: 磁極推定の操作。`config/copley/` に設定、`src/+copley/` に通信・推定処理。
 - `exp01_SI/`、`exp02_FB/`、`exp03_FF/`、`exp04_ILC/`: 同定・FB・FF・ILC実験。
+- `exp05_AccelerationFF/`: [加減速を含む位置依存FFの同定・比較](exp05_AccelerationFF/README.md)。
 - `src/`: 取得、Homing、解析、保存の共通関数。
 - `config/`、`simulink/`、`twincat/`: 実験設定、制御モデル、PLC。
 

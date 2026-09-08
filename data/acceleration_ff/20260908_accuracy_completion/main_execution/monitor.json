@@ -1,0 +1,9 @@
+{
+    "initial":  54101029,
+    "minimum":  54096470,
+    "maximum":  66604229,
+    "peak_error_m":  0.00087989999999951718,
+    "active_runs":  5,
+    "monitor_samples":  4797,
+    "aborted":  false
+}

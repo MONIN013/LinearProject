@@ -16,7 +16,10 @@ Simulink.fileGenControl("set", ...
     "CodeGenFolder", fullfile(projectRoot, "CodeGen"), "createDir", true);
 dataDir = fullfile(projectRoot, "simulink", "data");
 assert_target_built(projectRoot, "tunable_build_info.mat", Ts);
-set_param(model, "SimulationMode", "external");
+% Select the deployed common module explicitly; empty arguments open a dialog
+% on every connection, including each exp05 trial.
+set_param(model, "SimulationMode", "external", ...
+    "ExtModeMexArgs", "'192.168.10.3.1.1' 0 16842784"); % Object3, 0x01010020
 bufferCapacity = get_buffer_capacity(model);
 resetValues = prepare_tunable_trajectory_parameters( ...
     zeros(N, 1), zeros(N, 1), bufferCapacity);
