@@ -1,0 +1,21 @@
+{
+  "fs_hz": 4000,
+  "samples": 4096,
+  "trials": 15,
+  "replays": 5,
+  "seeds": 32,
+  "window": 5,
+  "min_gain": 0.1,
+  "mass_kg": 0.6,
+  "damping_Ns_m": 3.0,
+  "force_N_A": 20.0,
+  "kp_A_m": 2000.0,
+  "kv_As_m": 14.0,
+  "nominal_delay_samples": 2,
+  "q_cutoff_hz": 420,
+  "noise_bandwidth_hz": 180,
+  "correlation_rho": 0.8,
+  "drift_peak_A": 0.04,
+  "noise_rms_m": 2e-06,
+  "seed_start": 701
+}

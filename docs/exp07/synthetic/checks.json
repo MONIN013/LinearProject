@@ -1,0 +1,30 @@
+{
+  "clean_vs_standard_max_A": 3.608224830031759e-16,
+  "reconstruction_max_variation_A": 1.0734468869344482e-13,
+  "whole_step_fixed_point_error": 0.0,
+  "inside_Q_fixed_point_error": 0.08727272727272728,
+  "local_design_rank": 2,
+  "local_null_residual": 0.0,
+  "contraction_screen": {
+    "clean": {
+      "0.3": 0.7000000063314381,
+      "0.9": 0.10000007518535607
+    },
+    "independent_noise": {
+      "0.3": 0.7000000063314381,
+      "0.9": 0.10000007518535607
+    },
+    "model_mismatch": {
+      "0.3": 0.7798560430501812,
+      "0.9": 0.48960803627675875
+    },
+    "drift": {
+      "0.3": 0.7000000063314381,
+      "0.9": 0.10000007518535607
+    },
+    "correlated_noise": {
+      "0.3": 0.7000000063314381,
+      "0.9": 0.10000007518535607
+    }
+  }
+}

@@ -17,22 +17,32 @@ if exist("velocitySweepEnabled", "var") && velocitySweepEnabled
     completedTrialsByVelocity = sweep.completedTrialsByVelocity;
     completedVelocities = sweep.completedVelocities;
 else
+    % Optional single-trajectory extension; the velocity sweep is unchanged.
+    extension = struct();
+    if exist("ilcExtension", "var"), extension = ilcExtension; end
     history = initialize_history(t, r, Ntrial);
+    if isfield(extension, "initialFeedforward")
+        initial = extension.initialFeedforward(:);
+        assert(numel(initial) == N && all(isfinite(initial)) && ...
+            max(abs(initial)) <= 2*MAX_INPUT, ...
+            "Invalid initial FF or existing ILC input limit exceeded.");
+        history.f(:, 1) = initial;
+    end
     [history, completedTrials] = run_ilc_trials( ...
         string(modelName), history, Ntrial, N, t, Tend, Ts, fb, Gn0, ...
-        Qsos, Qscale, MAX_INPUT, confirmEachTrial, ilcRunDir, "single");
+        Qsos, Qscale, MAX_INPUT, confirmEachTrial, ilcRunDir, "single", extension);
 end
 
 function [history, completedTrials] = run_ilc_trials( ...
         model, history, Ntrial, N, t, Tend, Ts, fb, Gn0, ...
-        Qsos, Qscale, MAX_INPUT, confirmEachTrial, runDir, velocityTag)
+        Qsos, Qscale, MAX_INPUT, confirmEachTrial, runDir, velocityTag, extension)
 [dataDir, bufferCapacity] = prepare_external_mode(model, N, Ts);
 cleanupGuard = onCleanup(@()reset_disconnect_and_archive( ...
     model, N, bufferCapacity, dataDir, runDir, velocityTag, 0));
 connect_external_mode(model);
 [history, completedTrials] = run_ilc_trial_sequence( ...
     model, history, Ntrial, t, Tend, Ts, fb, Gn0, Qsos, Qscale, ...
-    MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity, runDir, velocityTag);
+    MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity, runDir, velocityTag, extension);
 end
 
 function sweep = run_ilc_velocity_sweep( ...
@@ -140,7 +150,11 @@ end
 function [history, completedTrials] = run_ilc_trial_sequence( ...
         model, history, Ntrial, t, Tend, Ts, fb, Gn0, ...
         Qsos, Qscale, MAX_INPUT, confirmEachTrial, dataDir, bufferCapacity, ...
-        runDir, velocityTag)
+        runDir, velocityTag, extension)
+if nargin < 17, extension = struct(); end
+updateState = struct();
+useExtension = isfield(extension, "update");
+if useExtension, history.updateInfo = cell(1, Ntrial); end
 completedTrials = 0;
 progressFigure = gobjects(0);
 for iteration = 1:Ntrial
@@ -181,6 +195,15 @@ for iteration = 1:Ntrial
     fNext(1:padding) = fNext(padding+1);
     fNext(end-padding+1:end) = fNext(end-padding);
     completedTrials = iteration;
+
+    if useExtension
+        [fNext, updateState, updateInfo] = extension.update( ...
+            f, history.e(:, iteration), iteration, fNext, updateState);
+        fNext = fNext(:);
+        assert(numel(fNext) == numel(f) && all(isfinite(fNext)), ...
+            "The ILC extension returned an invalid waveform.");
+        history.updateInfo{iteration} = updateInfo;
+    end
 
     progressFigure = plot_progress( ...
         progressFigure, t, history, iteration, f, fNext);
