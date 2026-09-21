@@ -7,18 +7,21 @@ TwinCATは Visual Studio 2019で `twincat/NikonMotorProject2025.sln` を開く�
 クローン後は `git lfs install` と `git lfs pull` を実行して実体を取得する。
 実機ライセンス、ローカルarming設定、TwinCAT生成物はGit管理対象外。
 今回の実験確認は [exp01〜06の検証記録](docs/experiments-verification-2026-09-21.md) に記録する。
+exp07・08の統合と比較は [ILC再現性の検証記録](docs/ilc-repeatability-verification-2026-09-22.md) を参照。
 
 - `exp00_Commissioning/`: 磁極推定の操作。`config/copley/` に設定、`src/+copley/` に通信・推定処理。
 - `exp01_SI/`、`exp02_FB/`、`exp03_FF/`、`exp04_ILC/`: 同定・FB・FF・ILC実験。
 - `exp05_AccelerationFF/`: [加減速を含む位置依存FFの同定・比較](exp05_AccelerationFF/README.md)。
 - `exp06_AllocationTransfer/`: [2軸への電流配分を変えたFFの同定・比較](exp06_AllocationTransfer/README.md)。
+- `exp07_RepeatabilityILC/`: [学習過渡を補正したILCの反復再現性比較](exp07_RepeatabilityILC/README.md)。
+- `exp08_PairedConfidenceILC/`: [同一FFペアによる信頼度付きILCの比較](exp08_PairedConfidenceILC/README.md)。
 - `src/`: 取得、Homing、解析、保存の共通関数。
 - `config/`、`simulink/`、`twincat/`: 実験設定、制御モデル、PLC。
 
 通常FFはSimulinkから1本のトルク指令を出し、実軸選択と磁極参照は `twincat/MotorRuntime` が扱う。
 磁極推定は専用のcommissioning手順とarmingを使用する。実行手順は [FF実験](exp03_FF/README.md)、磁極推定の入口は `exp00_Commissioning/magnetic_pole_commissioning_live.m`。
 モデル・周期・固定バッファが同じなら、軌道・FF係数の変更で再ビルド・再Activateは不要。
-exp01〜06は共通の `linear_exp_tunable_2025a` を使う。SIの定数ゲイン、PID、通常FBは
+exp01〜08は共通の `linear_exp_tunable_2025a` を使う。SIの定数ゲイン、PID、通常FBは
 同じ2次制御器の係数をMATLABから切り替える。固定バッファは800,001点で、4/8 kHzの100秒同定を収める。
 停止処理、電流上限、通信保護、実験前後の状態確認は維持する。
 

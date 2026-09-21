@@ -1,0 +1,5 @@
+method,trainCount,replayCount,trainSamples,replaySamples,peakTotalCurrent_A,peakPhysicalCurrent_A,pairedIdentical,fixedReplay,candidateReplayed
+pair_confidence,30,5,1492020,248670,1.60779104568064,1.606,1,1,1
+pair_mean,30,5,1492020,248670,1.60601508058608,1.606,1,1,1
+standard,30,5,1492020,248670,1.60021805902943,1.6,1,1,1
+raw_rcs,30,5,1492020,248670,1.59667531726882,1.596,1,1,1

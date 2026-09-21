@@ -12,7 +12,14 @@ for k = 1:numel(files)
     assert(~isfile(destination),'NikonMotor:ArchiveExists', ...
         'An original already exists at %s; retain the new file for inspection.',destination);
     if ~isfolder(fileparts(destination)), mkdir(fileparts(destination)); end
-    [ok,message] = movefile(source,destination);
-    assert(ok,'NikonMotor:ArchiveFailed','%s',message);
+    % Windows can briefly lock a MAT after the readback verification.
+    for attempt = 1:5
+        [ok,message] = movefile(source,destination);
+        if ok, break; end
+        if ~ispc || attempt==5
+            error('NikonMotor:ArchiveFailed','%s',message);
+        end
+        pause(0.1*attempt);
+    end
 end
 end

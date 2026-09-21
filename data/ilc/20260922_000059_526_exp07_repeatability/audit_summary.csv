@@ -1,0 +1,5 @@
+method,trainCount,replayCount,trainSamples,replaySamples,peakTotalCurrent_A,peakPhysicalCurrent_A,pairedIdentical,fixedReplay,candidateReplayed
+standard,15,5,746010,248670,1.63268099213019,1.632,1,1,1
+transport_mean,15,5,746010,248670,1.62427334464155,1.624,1,1,1
+transport_rcs,15,5,746010,248670,1.61622606660239,1.616,1,1,1
+raw_rcs,15,5,746010,248670,1.61462014634162,1.614,1,1,1

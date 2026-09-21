@@ -5,7 +5,14 @@ matPath = fullfile(runDir,[char(name) '.mat']);
 temporary = [tempname(runDir) '.mat'];
 guard = onCleanup(@()remove_temporary(temporary));
 save(temporary,'-struct','values');
-movefile(temporary,matPath,'f');
+% Windows may briefly lock a newly saved MAT. Retry only the replacement,
+% retaining both the completed temporary file and the previous result.
+for attempt = 1:5
+    [ok,message,messageId] = movefile(temporary,matPath,'f');
+    if ok, break; end
+    if ~ispc || attempt==5, error(messageId,'%s',message); end
+    pause(0.1*attempt);
+end
 fprintf('Saved data to %s\n',matPath);
 end
 

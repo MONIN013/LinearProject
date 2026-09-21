@@ -47,6 +47,37 @@ verifyEqual(testCase,fileparts(figurePaths(1)),string(runDir));
 verifyTrue(testCase,isfile(figurePaths(1)));
 end
 
+function testSaveWaitsForTemporaryWindowsFileLock(testCase)
+assumeTrue(testCase,ispc);
+runDir = create_run_directory(fullfile(testCase.TestData.root,'.codex-temp'), ...
+    'storage_lock_test');
+original = struct('trial',1);
+file = save_experiment_result(runDir,'result',original);
+locked = System.IO.File.Open(file,System.IO.FileMode.Open, ...
+    System.IO.FileAccess.Read,System.IO.FileShare.None);
+lockGuard = onCleanup(@()locked.Dispose());
+release = timer('StartDelay',0.15,'TimerFcn',@(~,~)locked.Dispose());
+timerGuard = onCleanup(@()delete(release));
+start(release);
+updated = struct('trial',2);
+save_experiment_result(runDir,'result',updated);
+verifyEqual(testCase,load(file),updated);
+verifyEqual(testCase,numel(dir(fullfile(runDir,'*.mat'))),1);
+archiveRun = create_run_directory(fullfile(testCase.TestData.root,'data','storage_test'),'lock');
+source = save_experiment_result(archiveRun,'result',updated);
+sourceLock = System.IO.File.Open(source,System.IO.FileMode.Open, ...
+    System.IO.FileAccess.Read,System.IO.FileShare.None);
+sourceGuard = onCleanup(@()sourceLock.Dispose());
+releaseSource = timer('StartDelay',0.15,'TimerFcn',@(~,~)sourceLock.Dispose());
+sourceTimerGuard = onCleanup(@()delete(releaseSource));
+start(releaseSource);
+archive_experiment_intermediates(string(source));
+verifyFalse(testCase,isfile(source));
+archived = strrep(source,[filesep 'data' filesep], ...
+    [filesep '.codex-temp' filesep 'data-originals' filesep]);
+verifyEqual(testCase,load(archived),updated);
+end
+
 function testPlantPublicationKeepsHistoryAndOtherPeriod(testCase)
 root = testCase.TestData.root;
 baseDir = tempname; mkdir(baseDir);
