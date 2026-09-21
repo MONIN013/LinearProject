@@ -47,7 +47,7 @@ TF1400 runtime licenseが必要。磁極参照manifestの過去データへの�
 
 Homingは55,313,296 count付近から54,100,000 countへ実行し、54,099,637 countに到達。
 到達誤差−36.3 µmで許容差100 µm以内。取得カウンタの連続性、電流上限、終了状態を確認した。
-元の保存先は `data/homing/20260907_192015_Homing_Result_2026-09-07_5/Homing_Result_2026-09-07_5.mat`。
+元の保存先は `data/homing/Homing_Result_2026-09-07_5.mat`。
 
 3回とも同じ軌道: 距離0.84 mの往復、`v_max=1 m/s`、`a_max=17 m/s²`
 （軌道生成関数には `a_max/2` を渡す）、折返し待機1 s、前後待機各1.5 s、

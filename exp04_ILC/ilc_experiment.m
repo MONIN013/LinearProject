@@ -114,18 +114,18 @@ run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m")); %[output:491036df]
 %%
 %[text] ## 5. Run the ILC trials
 %[text] **Operator action:** this section connects to external mode once, runs all trials, and disconnects when the sequence finishes or is interrupted. Each trial's raw measurement is archived under this experiment's run directory.
-open(fullfile(projectRoot, ModelName));
+load_system(fullfile(projectRoot, ModelName));
 confirmEachTrial = false; % Set true to inspect each result before continuing.
 ilcRunDir = create_run_directory(fullfile(projectRoot, "data", "ilc"), ...
     sprintf("V%.3f", v_max));
 run(fullfile(projectRoot, "exp04_ILC", "obtainMeasurement.m")); %[output:9e5550f3] %[output:8d9bb019] %[output:8b7427c5] %[output:63f5026d]
 %%
 %[text] ## Save the result
-resultFile = save_experiment_result(ilcRunDir, ...
+resultFile = finalize_experiment_result(ilcRunDir, ...
     sprintf("ilc_result_V%.3f", v_max), struct( ...
     "history", history, "completedTrials", completedTrials, "Kd", Kd, ...
     "traj", traj, "Q", Q, "Fc", Fc, "Ts", Ts, ...
-    "plantPath", plantPath));
+    "plantPath", plantPath), fullfile('raw','single'), "ilc_progress_single.mat");
 %%
 %[text] ## 6. Inspect the learned result
 iteration = completedTrials;

@@ -37,7 +37,7 @@ if length(Index_servo) > 1
     warning("There appear to be duplicate 'servo switch' blocks in your model. Please remove all duplicate blocks.");
     Index_servo = Index_servo(1);
 end
-close_system(model);
+close_system(model,1);
 Index_ref = find(contains(BlockPaths,'set_ref'));
 if length(Index_ref) > 1
     warning("There appear to be duplicate 'set_ref' blocks in your model. Please remove all duplicate blocks.");

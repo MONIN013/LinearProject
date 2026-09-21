@@ -71,7 +71,7 @@ load_system(modelFile);
 cleanup = onCleanup(@()localCloseModel(modelName));
 
 muxPath = modelName + "/Mux2";
-verifyEqual(testCase, string(get_param(muxPath, "Inputs")), "10");
+verifyEqual(testCase, string(get_param(muxPath, "Inputs")), "11");
 
 connectivity = get_param(muxPath, "PortConnectivity");
 actual = strings(1, 10);
@@ -84,6 +84,11 @@ expected = [ ...
     "count", "error", "input", "vel", "position", ...
     "torque", "ff", "absolute position", "ref", "rf"];
 verifyEqual(testCase, actual, expected);
+verifyEqual(testCase,string(getfullname(connectivity(11).SrcBlock)), ...
+    modelName+"/Axis Snapshot");
+verifyEqual(testCase,string(get_param(modelName+"/Axis Snapshot/Raw","PortDataType")),"int32");
+verifyEqual(testCase,string(get_param(modelName+"/Axis Snapshot/Raw","PortDim")),"20");
+verifyEqual(testCase,string(get_param(modelName+"/Allocation Request Id","PortDataType")),"uint32");
 delete(cleanup);
 end
 
@@ -192,8 +197,11 @@ for modelIndex = 1:numel(modelNames)
     verifyNumElements(testCase, torqueOutputs, 1);
     verifyEqual(testCase, string(torqueOutputs{1}), ...
         systemPath + "/Target Torque");
-    verifyEqual(testCase, localInputSourceName(torqueOutputs{1}, 1), ...
-        "Data Type Conversion");
+    if modelNames(modelIndex)=="linear_exp_tunable_2025a"
+        verifyEqual(testCase, localInputSourceName(torqueOutputs{1}, 1), "Stop current");
+    else
+        verifyEqual(testCase, localInputSourceName(torqueOutputs{1}, 1), "Data Type Conversion");
+    end
     % Physical core selection belongs exclusively to CopleyTest MotorRuntime.
     verifyEmpty(testCase, find_system(systemPath, "SearchDepth", 1, ...
         "RegExp", "on", "Name", "^(Core Window|Torque Gate) Axis "));

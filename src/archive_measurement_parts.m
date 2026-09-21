@@ -1,14 +1,12 @@
 function [paths, runDir] = archive_measurement_parts(dataDir, runDir, rawSubdir)
 %ARCHIVE_MEASUREMENT_PARTS Preserve completed File Writer parts after drive cleanup.
-% Omitted runDir retains unassigned parts in data/archive. Never overwrites raw data.
-if nargin < 2, runDir = ''; end
+% The caller assigns every capture to a run. Never overwrites raw data.
+assert(nargin >= 2 && ~isempty(runDir),'NikonMotor:RunDirectoryRequired', ...
+    'Specify the run directory before moving measurement parts.');
 if nargin < 3, rawSubdir = 'raw'; end
 parts = dir(fullfile(dataDir,'measurement_*.mat'));
 paths = strings(numel(parts),1);
 if isempty(parts), return; end
-if isempty(runDir)
-    runDir = create_run_directory('data/archive','unassigned_measurement');
-end
 rawDir = fullfile(runDir,rawSubdir);
 if ~isfolder(rawDir), mkdir(rawDir); end
 for k = 1:numel(parts)

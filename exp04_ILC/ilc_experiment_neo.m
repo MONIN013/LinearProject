@@ -3,7 +3,7 @@
 %[text] The build section only prepares the target. The velocity loop operates the real stage and must be run by the experiment operator.
 %[text] ## 1. Load settings and design the feedback controller
 clear; close all;
-projectRoot = fileparts(fileparts(mfilename("fullpath")));
+projectRoot = setup_project();
 run(fullfile(projectRoot, "config", "config_tunable.m"));
 figToolsRoot = fullfile(fileparts(projectRoot), "FigTools");
 addpath(figToolsRoot, fullfile(figToolsRoot, "src"));
@@ -51,6 +51,8 @@ title("");
 
 figure; %[output:3d4e1a95]
 S = feedback(1, Pd*Kd);
+assert(isstable(feedback(Pdn*Kd,1)) && max(abs(S.ResponseData),[],'all')<Smax, ...
+    'NikonMotor:ControllerCheckFailed','Check stability and sensitivity before ILC.');
 SmaxFrd = frd(Smax*ones(numel(Pd.Frequency), 1), ...
     Pd.Frequency, "FrequencyUnit", "Hz");
 bopSensitivity = bop;
@@ -85,7 +87,7 @@ title("ILC convergence condition");
 %[text] ## 3. Define the velocity sweep and reference trajectory settings
 dist = 1.25;                  % Travel distance [m]
 v_max_list = 0.1:0.1:2.0;    % Constant-velocity settings [m/s]
-a_max = 19.0;                 % Maximum acceleration [m/s^2]
+a_max = 12.0;                 % Legacy scaling: average acceleration 6, peak 9 m/s^2.
 t_pause = 1.0;                % Dwell at the turn-around point [s]
 t_pre = 1.5;                  % Idle time before motion [s]
 t_post = 1.5;                 % Idle time after motion [s]
@@ -93,11 +95,13 @@ feedbackFlag = 1;
 %%
 %[text] ## 4. Build the tunable model
 %[text] Run this section after every sampleRateHz change. Demo 4 shares the target with Demo 3. Publish/install the generated module, set the TwinCAT task to Ts, and activate the configuration before the trials.
-run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m")); %[output:945d8957]
+rebuildTarget = false;
+if rebuildTarget, run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m")); end
 %%
 %[text] ## 5. Run the automatic ILC velocity sweep
-%[text] **Operator action:** this section connects to external mode once, then runs 10 ILC trials at each speed from 0.1 m/s through 1.5 m/s. Each speed uses a fresh ILC history and is saved separately. The sweep stops if a speed does not complete all 10 trials.
-open(fullfile(projectRoot, ModelName));
+%[text] Each speed from 0.1 to 2.0 m/s uses 15 trials and a fresh ILC history. Completed speeds and every applied trial are saved. The sweep stops if a speed does not complete all 15 trials.
+load_system(fullfile(projectRoot, ModelName));
+[~,homing] = home_to_start(54100000);
 confirmEachTrial = false;
 velocitySweepEnabled = true;
 ilcRunDir = create_run_directory(fullfile(projectRoot, "data", "ilc"), ...
@@ -110,6 +114,8 @@ sweepResultFile = save_experiment_result(ilcRunDir, "ilc_velocity_sweep", ...
 
 fprintf("Completed %d/%d velocity setting(s).\n", ...
     completedVelocities, numel(v_max_list));
+assert(completedVelocities==numel(v_max_list) && all(completedTrialsByVelocity==Ntrial), ...
+    'NikonMotor:IncompleteILCSweep','The full ILC velocity sweep did not finish.');
 %%
 %[text] ## 6. Inspect the latest learned result
 iteration = completedTrials; %[output:75497d2e]

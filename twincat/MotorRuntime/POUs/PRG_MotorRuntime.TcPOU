@@ -6,6 +6,9 @@ VAR
     fbMotor : FB_MotorRuntimeKernel;
     fbArbiter : FB_MotorCommandArbiter;
     fbIoWatchdog : FB_MotorIoWatchdog;
+    fbAllocation : FB_AllocationTransfer;
+
+    AllocationRequestId AT %I* : UDINT;
 
     encoderPositionRaw        AT %I* : ULINT;
     encoderReady              AT %I* : BOOL;
@@ -119,8 +122,25 @@ fbIoWatchdog(
 // recovers while an idle 0/0 command happens to be present.
 GVL_MotorRuntimeInternal.IoWatchdogResetRequest := FALSE;
 
+fbAllocation(
+    Command := fbArbiter.SelectedCommand,
+    RuntimeRequestId := AllocationRequestId,
+    CommissioningActive := fbArbiter.CommissioningActive,
+    SourceControl := fbMotor.CopleyControlWord,
+    SourceTorque := fbMotor.CopleyTargetTorque,
+    StatusWord := copleyStatusWord,
+    ActualCurrent := copleyActualCurrentCount,
+    PositionCount := encoderPositionActualRaw,
+    VelocityCount := encoderVelocityActualRaw,
+    IoReady := fbIoWatchdog.SafeToDrive,
+    SourceFaultId := fbMotor.FaultId,
+    Period100ns := cycleTime100ns);
+
 GVL_MotorRuntime.Status := fbMotor.Status;
 GVL_MotorRuntimeInternal.Feedback := fbMotor.Feedback;
+IF GVL_AllocationTransfer.FaultId <> 0 THEN
+    GVL_MotorRuntimeInternal.Feedback.fault_id := GVL_AllocationTransfer.FaultId;
+END_IF
 IF (fbArbiter.CommissioningActive OR NOT fbArbiter.CommissioningActive)
    AND fbIoWatchdog.Fault THEN
     GVL_MotorRuntimeInternal.Feedback.fault_id := fbIoWatchdog.FaultId;
@@ -128,17 +148,17 @@ END_IF
 
 IF (fbArbiter.CommissioningActive OR NOT fbArbiter.CommissioningActive)
    AND fbIoWatchdog.SafeToDrive THEN
-    copleyControlWordModule1 := fbMotor.CopleyControlWord[1];
-    copleyTargetTorqueModule1 := fbMotor.CopleyTargetTorque[1];
+    copleyControlWordModule1 := fbAllocation.Control[1];
+    copleyTargetTorqueModule1 := fbAllocation.Torque[1];
     copleyCommutationAngleModule1 := fbMotor.CopleyCommutationAngle[1];
-    copleyControlWordModule2 := fbMotor.CopleyControlWord[2];
-    copleyTargetTorqueModule2 := fbMotor.CopleyTargetTorque[2];
+    copleyControlWordModule2 := fbAllocation.Control[2];
+    copleyTargetTorqueModule2 := fbAllocation.Torque[2];
     copleyCommutationAngleModule2 := fbMotor.CopleyCommutationAngle[2];
-    copleyControlWordModule3 := fbMotor.CopleyControlWord[3];
-    copleyTargetTorqueModule3 := fbMotor.CopleyTargetTorque[3];
+    copleyControlWordModule3 := fbAllocation.Control[3];
+    copleyTargetTorqueModule3 := fbAllocation.Torque[3];
     copleyCommutationAngleModule3 := fbMotor.CopleyCommutationAngle[3];
-    copleyControlWordModule4 := fbMotor.CopleyControlWord[4];
-    copleyTargetTorqueModule4 := fbMotor.CopleyTargetTorque[4];
+    copleyControlWordModule4 := fbAllocation.Control[4];
+    copleyTargetTorqueModule4 := fbAllocation.Torque[4];
     copleyCommutationAngleModule4 := fbMotor.CopleyCommutationAngle[4];
 ELSE
     // This is the final gate before the physical PDO outputs. It remains

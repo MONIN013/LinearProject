@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="DUT_AllocationSample" Id="{730c3048-4b78-4b50-969c-6d1127c00601}">
+    <Declaration><![CDATA[TYPE DUT_AllocationSample : STRUCT
+    cycleIndex : UDINT;
+    positionCount : DINT;
+    velocityCount : DINT;
+    virtualTorque : DINT;
+    targetCurrent : ARRAY [1..4] OF DINT;
+    actualCurrent : ARRAY [1..4] OF DINT;
+    statusWord : ARRAY [1..4] OF DINT;
+    faultId : UDINT;
+    ioReady : DINT;
+    period100ns : UDINT;
+    requestId : UDINT;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

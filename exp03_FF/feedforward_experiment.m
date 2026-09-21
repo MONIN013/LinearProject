@@ -49,6 +49,8 @@ title(""); %[output:14a7b9f0]
 
 figure; %[output:3960dddf]
 S = feedback(1, Pd*Kd);
+assert(isstable(feedback(Pdn*Kd,1)) && max(abs(S.ResponseData),[],'all')<Smax, ...
+    'NikonMotor:ControllerCheckFailed', 'Check FF feedback stability and sensitivity before operating the stage.');
 SmaxFrd = frd(Smax*ones(numel(Pd.Frequency), 1), ...
     Pd.Frequency, "FrequencyUnit", "Hz");
 bopSensitivity = bop;
@@ -93,11 +95,14 @@ f = [f(1+Ndelay:end); repmat(f(end), Ndelay, 1)];
 %%
 %[text] ## 3. Build the tunable model
 %[text] Run this section after every sampleRateHz change. It calls `slbuild` and does not operate the servo. Publish/install the generated module, set the TwinCAT task to Ts, and activate the configuration before the experiment.
-run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m")); %[output:45698547] %[output:3768e1b6] %[output:39a74fae]
+buildTarget = false;
+if buildTarget
+    run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m"));
+end
 %%
 %[text] ## 4. Run the experiment
 %[text] **Operator action:** this section connects to external mode, enables the servo, moves the stage, and archives prior staged measurement parts before capture.
-open(fullfile(projectRoot, ModelName))
+load_system(fullfile(projectRoot, ModelName));
 [~, homing] = home_to_start(54100000);
 run(fullfile(projectRoot, "exp03_FF", "obtainMeasurement.m")); %[output:55d50f92]
 %%
@@ -135,8 +140,9 @@ fileName = sprintf("V%.3f_%s_Result", v_max, specialTag);
 feedforwardResult = struct("t_ex", t_ex, "r", r, "y_ex", y_ex, ...
     "e_ex", e_ex, "u_ex", u_ex, "v_ex", v_ex, "ff_ex", ff_ex, ...
     "y_absolute_ex", y_absolute_ex, "Kd", Kd, "r_ex", r_ex, ...
-    "Ts", Ts, "plantPath", plantPath, "homing", homing);
-save_experiment_result(runDir, fileName, feedforwardResult); %[output:group:90665e0e] %[output:95c552b7]
+    "Ts", Ts, "plantPath", plantPath, "homing", homing, ...
+    "pre",pre,"post",post,"measurement_metadata",measurement_metadata);
+finalize_experiment_result(runDir, fileName, feedforwardResult); %[output:group:90665e0e] %[output:95c552b7]
 
 %%
 %[text] ## 5. Inspect the current result

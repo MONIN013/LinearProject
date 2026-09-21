@@ -18,6 +18,15 @@
     <LibraryReferences>{6e8b2de3-de11-4247-9f1b-43c41408bf23}</LibraryReferences>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="DUTs\DUT_AllocationSample.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="GVLs\GVL_AllocationTransfer.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\FB_AllocationTransfer.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="PlcTask.TcTTO">
       <SubType>Code</SubType>
     </Compile>

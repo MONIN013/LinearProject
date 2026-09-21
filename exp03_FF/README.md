@@ -24,7 +24,7 @@ Simulink側に軸別ゲートを追加しない。
    標準の周期は4 kHz (`Ts = 0.00025 s`)。
 3. 実験節では `home_to_start(54100000)` で開始位置へ自動復帰してから、
    `obtainMeasurement.m` で接続・計測する。前回のステージング計測は
-   `data/archive/` へ退避し、今回の計測と結果は `data/ff/<日時_run>/` に保存する。
+   今回のrunの `raw/previous/` へ退避し、今回の計測と結果は `data/ff/<日時_run>/` に保存する。
 
 生成物は `CodeGen/`、キャッシュは `Cache/` を使用する。
 ビルドと取得の両方で同じ保存先を設定するため、MATLABを再起動しても
@@ -77,7 +77,7 @@ MATLAB Projectを開く（または `src` をpathへ追加する）と、各実�
 到達誤差−34.5 µm / +26.2 µm、7,360点 / 7,358点で欠落なし。
 呼出元とモデルworkspaceの制御器・軌道・変数有無、現在フォルダの復元を確認。
 終了後は全軸トルク指令0・速度0・`p_active=p_servo=0`。
-結果は `data/homing/20260907_153033_Homing_Result_2026-09-07_3/Homing_Result_2026-09-07_3.mat` と `_4.mat`。
+結果は `data/homing/Homing_Result_2026-09-07_3.mat` と `_4.mat`。
 
 ## 高速な実験反復
 
@@ -94,7 +94,7 @@ MATLAB Projectを開く（または `src` をpathへ追加する）と、各実�
 
 FF取得開始時に `data/ff/<日時_run>/` を作成する。結果MATは従来の
 basename（例: `V1.000_notSpecial_Result.mat`）を保ち、TwinCATの分割計測は
-`raw/`、この実行で作成した図は `figures/` にまとめる。比較プロットは
+`raw/`、この実行で作成した図は結果MATと同じrun直下に保存する。比較プロットは
 `data/ff/` と `data/ilc/` 以下のrunを横断して読む。
 
 FFテストから、現行の `fbDesign` を使わない旧PID係数の固定値テストと、
@@ -118,7 +118,7 @@ FFテストから、現行の `fbDesign` を使わない旧PID係数の固定値
   約2.33 mm手前。マージン内なので軸1へ電流は指令されるが、
   マージンはその位置で推力が発生することを保証しない。
   初期位置を鎖交区間内に移して再検証する。定格電流・既定の長距離試験は未実施。
-  試験データ: `data/ff/20260907_135905_FF_smoke_5mm_0p2A_20260907/FF_smoke_5mm_0p2A_20260907.mat`。
+  試験データ: `data/ff/FF_smoke_5mm_0p2A_20260907.mat`。
 - 周辺のPID感度テストとILCスクリプト契約テストに既存不整合があり、
   今回のFF修正とは分けて扱う。
 
@@ -128,7 +128,7 @@ FFテストから、現行の `fbDesign` を使わない旧PID係数の固定値
   RAM上で30（EtherCAT制御）へ変更。Flash保存や安全機能の追加は行っていない。
 - Homingは60,851,478 → 54,100,243 count。目標との差24.3 µm、
   31,320点・カウンタ連続、電流ピーク0.957 A。
-  記録: `data/homing/20260907_150814_Homing_Result_2026-09-07_2/Homing_Result_2026-09-07_2.mat`。
+  記録: `data/homing/Homing_Result_2026-09-07_2.mat`。
 - FFは現行設定を維持: `dist=0.84`, `v_max=1`, `a_max=17`,
   `t_pause=1`, `t_pre=t_post=1.5`, `Ts=0.00025`, `MAX_INPUT=2`。
   現行のFF係数はすべて0なので、今回の記録はFBのみの基準実験。
