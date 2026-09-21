@@ -3,7 +3,7 @@
 
 #include "rtwtypes.h"
 
-extern real_T p_ref[131072];
-extern real_T p_ff[131072];
+extern real_T p_ref[800001];
+extern real_T p_ff[800001];
 
 #endif

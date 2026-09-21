@@ -72,7 +72,7 @@ function Assert-RequiredCstcaMappings {
     $drive1Owner = 'TIID^Device 3 (EtherCAT)^Drive 7 (XE2)'
     $drive2Owner = 'TIID^Device 3 (EtherCAT)^Drive 8 (XE2)'
     $motorConfigOwner = 'TIRC^TcCOM Objects^Object1 (motor_config)'
-    $linearOwner = 'TIRC^TcCOM Objects^Object3 (linear_exp_2025a)'
+    $linearOwner = 'TIRC^TcCOM Objects^Object3 (linear_exp_tunable_2025a)'
     $requiredLinks = @(
         @($encoderOwner, 'PlcTask Inputs^PRG_MotorRuntime.encoderPositionRaw', 'FB Inputs Channel 1^Position'),
         @($encoderOwner, 'PlcTask Inputs^PRG_MotorRuntime.encoderReady', 'FB Inputs Channel 1^Status^Ready'),
@@ -105,11 +105,13 @@ function Assert-RequiredCstcaMappings {
         @($drive2Owner, 'PlcTask Inputs^PRG_MotorRuntime.copleyWcStateDrive2', 'WcState^WcState'),
         @($drive2Owner, 'PlcTask Inputs^PRG_MotorRuntime.copleyInputToggleDrive2', 'WcState^InputToggle'),
         @($motorConfigOwner, 'PlcTask Inputs^GVL_MotorRuntime.Command^ControlWord', 'motor_config_Y^controlWord'),
-        @($linearOwner, 'PlcTask Inputs^GVL_MotorRuntime.Command^TargetTorque', 'TcModuleOutput^LinearSystem^TargetTorque'),
+        @($linearOwner, 'PlcTask Inputs^GVL_MotorRuntime.Command^TargetTorque', 'TcModuleOutput^linearsystem^TargetTorque'),
         @($motorConfigOwner, 'PlcTask Outputs^GVL_MotorRuntime.Status^StatusWord', 'motor_config_U^statusWord'),
-        @($linearOwner, 'PlcTask Outputs^GVL_MotorRuntime.Status^PositionActualValue', 'TcModuleInput^LinearSystem^Positionactualvalue'),
-        @($linearOwner, 'PlcTask Outputs^GVL_MotorRuntime.Status^VelocityActualValue', 'TcModuleInput^LinearSystem^Velocityactualvalue'),
-        @($linearOwner, 'PlcTask Outputs^GVL_MotorRuntime.Status^TorqueActualValue', 'TcModuleInput^LinearSystem^Torqueactualvalue1')
+        @($linearOwner, 'PlcTask Outputs^GVL_MotorRuntime.Status^PositionActualValue', 'TcModuleInput^linearsystem^PositionActualValue'),
+        @($linearOwner, 'PlcTask Outputs^GVL_MotorRuntime.Status^VelocityActualValue', 'TcModuleInput^linearsystem^VelocityActualValue'),
+        @($linearOwner, 'PlcTask Outputs^GVL_MotorRuntime.Status^TorqueActualValue', 'TcModuleInput^linearsystem^TorqueActualValue'),
+        @($linearOwner, 'PlcTask Outputs^GVL_AllocationTransfer.Snapshot', 'TcModuleInput^AxisSnapshot^Raw'),
+        @($linearOwner, 'PlcTask Inputs^PRG_MotorRuntime.AllocationRequestId', 'TcModuleOutput^AllocationRequestId')
     )
 
     foreach ($requiredLink in $requiredLinks) {

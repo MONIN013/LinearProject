@@ -3,11 +3,19 @@
 %[text] ### STEP 1: CHIRP EXCITATION
 %[text] load settings for the experiment
 clear; close all;
-projectRoot = fileparts(fileparts(mfilename("fullpath")));
-run(fullfile(projectRoot, "config", "config.m"));
+projectRoot = setup_project();
+run(fullfile(projectRoot, "config", "config_tunable.m"));
 load(fullfile(projectRoot, "config", "data", "pana_params.mat"));
 feedbackFlag = 1;
-Kd = tf(0.06,1); % open-loop system identification % open-loop system identification
+Kd = tf(0.06,1); % weak position feedback during current excitation
+[previousPlant, previousPlantPath] = load_experiment_plant(projectRoot, plantDataFile, Ts);
+previousNominal = c2d(tf(1,[previousPlant.Jn previousPlant.Dn 0]),Ts,"tustin") ...
+    /tf('z',Ts)^previousPlant.Ndelay;
+nominalClosedLoopStable = isstable(feedback(previousNominal*Kd,1));
+previousSensitivity = feedback(1,previousPlant.Pd*Kd);
+sensitivityPeak = max(abs(previousSensitivity.ResponseData),[],'all');
+assert(nominalClosedLoopStable && sensitivityPeak<2, ...
+    'NikonMotor:ControllerCheckFailed', 'Check the SI feedback stability and sensitivity before excitation.');
 %%
 %[text] design excitation signal
 Tend = 100; % simulation length
@@ -22,24 +30,30 @@ t_relative = t - floor(t/Tcycle)*Tcycle; % relative time inside chirp
 k = (f1 - f0)/Tcycle; 
 u = A*sin(p+(2*pi*(f0*t_relative + k/2 * t_relative.^2)));
 %%
-%[text] build simulink model "twomass\_exp\_2019a.slx" after executing this section
-%[text] (build only needed 1 time.  rebuild required if you change the following parameters or the feedback controller Kd.)
+%[text] The shared tunable model must have room for the complete 100 s excitation. Reuse the deployed model when its sample period and buffer capacity match.
 set_ff = u(:);
 set_ref = zeros(N,1);
-
-open(fullfile(projectRoot, ModelName));
+prepare_tunable_trajectory_parameters(set_ref, set_ff, tunable_trajectory_buffer_capacity());
+buildTarget = false;
+if buildTarget
+    run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m"));
+end
+load_system(fullfile(projectRoot, ModelName));
 %%
-%[text] execute experiment via simulink
-%[text] \*make sure to close all simulink files before executing this section
-open(fullfile(projectRoot, ModelName));
-obtainMeasurement; %[output:0389ae77]
+%[text] Homing, acquisition and shutdown use the same tunable model as the FF experiments.
+startCount = 60000000; % leave travel margin on both sides of the excitation
+load_system(fullfile(projectRoot, ModelName));
+% SI needs central travel margin, not a reproducible map origin. The stage
+% can settle several millimetres after de-energizing at this location.
+[~, homing] = home_to_start(startCount,100000); % 10 mm centering tolerance
+run(fullfile(projectRoot, "exp01_SI", "obtainMeasurement.m")); %[output:0389ae77]
 %%
 count = measurement(1,:); % data counts
-input = measurement(4,:); % control input [A]
-output = measurement(5,:); % loadside position [um]
-velocity = measurement(6,:);
-torque = measurement(7,:);
-lostPackages = setdiff(0:N-1, count);
+input = measurement(3,:); % total control input [A]
+output = measurement(5,:); % loadside position [m]
+velocity = measurement(4,:);
+torque = measurement(6,:); % measured current [A]
+lostPackages = setdiff(count(1):count(end), count);
 lostPackagesNum = length(lostPackages); % Number of Lost Packages
 assert(lostPackagesNum == 0 && all(diff(count) == 1), ...
     "Measurement contains missing or out-of-order samples.");
@@ -51,9 +65,13 @@ xlabel('time/s'); %[output:14795463]
 %%
 chirpResult = struct("input", input, "output", output, "velocity", velocity, ...
     "torque", torque, "Ts", Ts, "Tend", Tend, "Tcycle", Tcycle, ...
+    "Kd", Kd, "set_ff", set_ff, "homing", homing, "pre", pre, "post", post, ...
+    "startCount", startCount, ...
+    "previousPlantPath", previousPlantPath, "sensitivityPeak", sensitivityPeak, ...
+    "measurement_time_raw", measurement_time_raw, "measurement_time", measurement_time, ...
     "measurement_metadata", measurement_metadata, ...
     "measurement_source_path", measurement_source_path);
-save_experiment_result(runDir, "chirp_result", chirpResult);
+finalize_experiment_result(runDir, "chirp_result", chirpResult);
 %%
 %[text] ### STEP 2: TIME TREATMENT
 %[text] download data
@@ -134,6 +152,8 @@ fitCostFunction = @(logCoefficients) mean(abs(log( ...
     log([Jn, Dn]), optimset("Display", "off"));
 Jn = exp(logCoefficients(1));
 Dn = exp(logCoefficients(2));
+assert(all(isfinite([Jn Dn nominalFitCost])) && Jn>0 && Dn>0, ...
+    'NikonMotor:InvalidPlantFit', 'The identified mass and damping must be finite and positive.');
 fprintf("Nominal fit: Jn=%.6g, Dn=%.6g, delay=%d samples, cost=%.4g\n", ... %[output:group:8bb5dd1e] %[output:15f98edc]
     Jn, Dn, Ndelay, nominalFitCost); %[output:group:8bb5dd1e] %[output:15f98edc]
 
@@ -163,6 +183,8 @@ bode(Pd_tor,bop_); %[output:02696bab]
 % The selected output file is defined in config/sample_rate.m.
 plantResult = struct("Pd", Pd, "Pd_tor", Pd_tor, "Pdn", Pdn, ...
     "Jn", Jn, "Dn", Dn, "Ndelay", Ndelay, "Ts", Ts, "Fs", Fs, ...
+    "Kd", Kd, "homing", homing, "pre", pre, "post", post, ...
+    "startCount", startCount, ...
     "nominalFitBandHz", nominalFitBandHz, "nominalFitCost", nominalFitCost, ...
     "measurement_metadata", measurement_metadata, ...
     "measurement_source_path", measurement_source_path);

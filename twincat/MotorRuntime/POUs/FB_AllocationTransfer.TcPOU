@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_AllocationTransfer" Id="{730c3048-4b78-4b50-969c-6d1127c00603}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_AllocationTransfer
+VAR_INPUT
+    Command : DUT_MotorDriverCommand;
+    RuntimeRequestId : UDINT;
+    CommissioningActive : BOOL;
+    SourceControl : ARRAY [1..4] OF WORD;
+    SourceTorque : ARRAY [1..4] OF INT;
+    StatusWord : ARRAY [1..4] OF WORD;
+    ActualCurrent : ARRAY [1..4] OF INT;
+    PositionCount : DINT;
+    VelocityCount : DINT;
+    IoReady : BOOL;
+    SourceFaultId : UDINT;
+    Period100ns : UDINT;
+END_VAR
+VAR_OUTPUT
+    Control : ARRAY [1..4] OF WORD;
+    Torque : ARRAY [1..4] OF INT;
+END_VAR
+VAR
+    i : INT;
+    pairIndex : INT;
+    idle : BOOL;
+    servoEnabled : BOOL;
+    weights : ARRAY [1..2] OF LREAL;
+    weightedTorque : LREAL;
+    cycleIndex : UDINT;
+    sessionId : UDINT;
+    sample : DUT_AllocationSample;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[cycleIndex := cycleIndex + 1;
+servoEnabled := (Command.ControlWord AND WORD#16#000F) = WORD#16#000F;
+idle := NOT servoEnabled AND (Command.TargetTorque = 0)
+    AND (ABS(VelocityCount) <= 1000) AND NOT CommissioningActive;
+FOR i := 1 TO 4 DO
+    idle := idle AND ((StatusWord[i] AND WORD#16#0004) = 0)
+        AND (SourceTorque[i] = 0);
+    Control[i] := SourceControl[i];
+    Torque[i] := SourceTorque[i];
+END_FOR
+
+IF GVL_AllocationTransfer.RequestId <> GVL_AllocationTransfer.AckId THEN
+    GVL_AllocationTransfer.RejectId := 0;
+    IF NOT idle THEN
+        GVL_AllocationTransfer.RejectId := 1; // no in-motion reconfiguration
+    ELSIF NOT GVL_AllocationTransfer.RequestedEnabled THEN
+        GVL_AllocationTransfer.Active := FALSE;
+        GVL_AllocationTransfer.FaultId := 0;
+    ELSE
+        weights[1] := 1.0 + GVL_AllocationTransfer.RequestedBeta;
+        weights[2] := 1.0 - GVL_AllocationTransfer.RequestedBeta * GVL_AllocationTransfer.RequestedRatio;
+        pairIndex := UINT_TO_INT(GVL_AllocationTransfer.RequestedPair);
+        IF NOT ((pairIndex >= 1) AND (pairIndex <= 3)
+            AND ((pairIndex = 1) OR GVL_MotorRuntimeInternal.NORMAL_FOUR_AXIS_ENABLED)
+            AND (GVL_AllocationTransfer.RequestedBeta >= -0.2)
+            AND (GVL_AllocationTransfer.RequestedBeta <= 0.2)
+            AND (GVL_AllocationTransfer.RequestedRatio >= 0.5)
+            AND (GVL_AllocationTransfer.RequestedRatio <= 2.0)
+            AND (weights[1] >= 0.8) AND (weights[1] <= 1.2)
+            AND (weights[2] >= 0.8) AND (weights[2] <= 1.2)) THEN
+            GVL_AllocationTransfer.RejectId := 2;
+        ELSIF NOT IoReady OR (SourceFaultId <> 0) OR (Period100ns <> 2500) THEN
+            GVL_AllocationTransfer.RejectId := 3;
+        ELSIF (PositionCount < GVL_MotorRuntimeInternal.TORQUE_LINKAGE_LOWER_COUNT[pairIndex+1])
+           OR (PositionCount > GVL_MotorRuntimeInternal.TORQUE_LINKAGE_UPPER_COUNT[pairIndex]) THEN
+            GVL_AllocationTransfer.RejectId := 4;
+        ELSE
+            GVL_AllocationTransfer.Pair := GVL_AllocationTransfer.RequestedPair;
+            GVL_AllocationTransfer.Beta := GVL_AllocationTransfer.RequestedBeta;
+            GVL_AllocationTransfer.Ratio := GVL_AllocationTransfer.RequestedRatio;
+            GVL_AllocationTransfer.Weights := weights;
+            GVL_AllocationTransfer.Active := TRUE;
+            GVL_AllocationTransfer.Started := FALSE;
+            GVL_AllocationTransfer.Complete := FALSE;
+            GVL_AllocationTransfer.FaultId := 0;
+            sessionId := GVL_AllocationTransfer.RequestId;
+        END_IF
+    END_IF
+    GVL_AllocationTransfer.AckId := GVL_AllocationTransfer.RequestId;
+END_IF
+
+IF GVL_AllocationTransfer.Active THEN
+    IF servoEnabled AND NOT GVL_AllocationTransfer.Started THEN
+        IF (RuntimeRequestId <> 0) AND (RuntimeRequestId = sessionId)
+           AND NOT CommissioningActive THEN
+            GVL_AllocationTransfer.Started := TRUE;
+        ELSE
+            // An abandoned arm must never change a later ordinary experiment.
+            GVL_AllocationTransfer.Active := FALSE;
+        END_IF
+    END_IF
+END_IF
+
+IF GVL_AllocationTransfer.Active AND GVL_AllocationTransfer.Started THEN
+    pairIndex := UINT_TO_INT(GVL_AllocationTransfer.Pair);
+    IF CommissioningActive OR NOT IoReady OR (SourceFaultId <> 0)
+       OR (Period100ns <> 2500)
+       OR (servoEnabled AND (RuntimeRequestId <> sessionId))
+       OR (PositionCount < GVL_MotorRuntimeInternal.TORQUE_LINKAGE_LOWER_COUNT[pairIndex+1])
+       OR (PositionCount > GVL_MotorRuntimeInternal.TORQUE_LINKAGE_UPPER_COUNT[pairIndex]) THEN
+        GVL_AllocationTransfer.FaultId := 630;
+    END_IF
+    FOR i := pairIndex TO pairIndex+1 DO
+        weightedTorque := INT_TO_LREAL(SourceTorque[i]) * GVL_AllocationTransfer.Weights[i-pairIndex+1];
+        // Physical scale is 0.1 A / 1000 counts. Abort instead of clipping
+        // a trial whose changed allocation would exceed the existing 2 A.
+        IF ABS(weightedTorque) > 20000.0 THEN
+            GVL_AllocationTransfer.FaultId := 631;
+        ELSE
+            Torque[i] := LREAL_TO_INT(weightedTorque);
+        END_IF
+    END_FOR
+END_IF
+
+IF GVL_AllocationTransfer.FaultId <> 0 THEN
+    FOR i := 1 TO 4 DO
+        Control[i] := 0;
+        Torque[i] := 0;
+    END_FOR
+END_IF
+
+// Publish every cycle, including ordinary experiments and the final stop.
+// The shared File Writer supplies the recording trigger and sample time.
+sample.cycleIndex := cycleIndex;
+sample.positionCount := PositionCount;
+sample.velocityCount := VelocityCount;
+sample.virtualTorque := INT_TO_DINT(Command.TargetTorque);
+sample.faultId := SourceFaultId;
+IF GVL_AllocationTransfer.FaultId <> 0 THEN sample.faultId := GVL_AllocationTransfer.FaultId; END_IF
+sample.ioReady := BOOL_TO_DINT(IoReady);
+sample.period100ns := Period100ns;
+sample.requestId := 0;
+IF GVL_AllocationTransfer.Active AND GVL_AllocationTransfer.Started THEN
+    sample.requestId := sessionId;
+END_IF
+FOR i := 1 TO 4 DO
+    sample.targetCurrent[i] := INT_TO_DINT(Torque[i]);
+    IF NOT IoReady THEN sample.targetCurrent[i] := 0; END_IF
+    sample.actualCurrent[i] := INT_TO_DINT(ActualCurrent[i]);
+    sample.statusWord[i] := WORD_TO_DINT(StatusWord[i]);
+END_FOR
+GVL_AllocationTransfer.Snapshot := sample;
+
+IF GVL_AllocationTransfer.Active AND GVL_AllocationTransfer.Started THEN
+    IF NOT servoEnabled OR (GVL_AllocationTransfer.FaultId <> 0) THEN
+        // One configuration covers exactly one servo-on interval. The next
+        // experiment cannot silently inherit this trial's allocation.
+        GVL_AllocationTransfer.Complete := TRUE;
+        GVL_AllocationTransfer.Active := FALSE;
+    END_IF
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

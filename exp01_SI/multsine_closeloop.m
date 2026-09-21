@@ -3,18 +3,23 @@
 %[text] ### STEP 1: CHIRP EXCITATION
 %[text] load settings for the experiment
 clear; close all;
-projectRoot = fileparts(fileparts(mfilename("fullpath")));
-addpath(projectRoot);
 projectRoot = setup_project();
-load(fullfile(projectRoot, "config", "data", "config.mat"));
+run(fullfile(projectRoot, "config", "config_tunable.m"));
 load(fullfile(projectRoot, "config", "data", "pana_params.mat"));
 %%
-%[text] build simulink model "twomass\_exp\_2019a.slx" after executing this section
-%[text] (build only needed 1 time.  rebuild required if you change the following parameters /or the feedback controller Kd.)
+%[text] The stored multisine was designed at 8 kHz. Select 8 kHz in config/sample_rate.m and deploy that period before using this alternative SI method; the signal is not resampled.
 load(fullfile(projectRoot, "config", "data", "ms_q.mat"));
 feedbackFlag = 1;
-Ts = 1.25e-4; % sampling time (don't change)
+assert(abs(ms.harm.fs-1/Ts)<1e-9, 'NikonMotor:MultisineSampleRateMismatch', ...
+    'ms_q.mat is an 8 kHz excitation. Select 8 kHz and deploy the matching model/task period.');
 Kd = tf(0.06,1); % open-loop system identification
+[previousPlant, previousPlantPath] = load_experiment_plant(projectRoot, plantDataFile, Ts);
+previousNominal = c2d(tf(1,[previousPlant.Jn previousPlant.Dn 0]),Ts,"tustin") ...
+    /tf('z',Ts)^previousPlant.Ndelay;
+previousSensitivity = feedback(1,previousPlant.Pd*Kd);
+sensitivityPeak = max(abs(previousSensitivity.ResponseData),[],'all');
+assert(isstable(feedback(previousNominal*Kd,1)) && sensitivityPeak<2, ...
+    'NikonMotor:ControllerCheckFailed', 'Check the SI feedback stability and sensitivity before excitation.');
 sampleLength = length(ms.x(1,1,:));
 u = MAX_INPUT*1/2*squeeze(ms.x(1,1,:))/(abs(max(squeeze(ms.x(1,1,:)))));
 periods = 10;
@@ -30,20 +35,23 @@ figure; %[output:2f9b2e6c]
 plot(t,u); %[output:2f9b2e6c]
 set_ff = u;
 set_ref = zeros(N,1);
+prepare_tunable_trajectory_parameters(set_ref, set_ff, tunable_trajectory_buffer_capacity());
 
-open(fullfile(projectRoot, ModelName));
+load_system(fullfile(projectRoot, ModelName));
 %%
-%[text] execute experiment via simulink
-%[text] \*make sure to close all simulink files before executing this section
-open(fullfile(projectRoot, ModelName))
-obtainMeasurement; %[output:424cb541]
+%[text] The common tunable buffer must fit all ten multisine periods (800,000 samples at 8 kHz).
+startCount = 60000000;
+load_system(fullfile(projectRoot, ModelName));
+% Allow passive settling at the central SI position; FF/ILC keep 100 um.
+[~, homing] = home_to_start(startCount,100000); % 10 mm centering tolerance
+run(fullfile(projectRoot, "exp01_SI", "obtainMeasurement.m")); %[output:424cb541]
 %%
 count = measurement(1,:); % data counts
-input = measurement(4,:); % control input [A]
-output = measurement(5,:); % loadside position [um]
-velocity = measurement(6,:);
-torque = measurement(7,:);
-lostPackages = setdiff(1:N, count);
+input = measurement(3,:); % total control input [A]
+output = measurement(5,:); % loadside position [m]
+velocity = measurement(4,:);
+torque = measurement(6,:); % measured current [A]
+lostPackages = setdiff(count(1):count(end), count);
 lostPackagesNum = length(lostPackages); % Number of Lost Packages
 %[text] save experiment data
 figure; %[output:38c5b8fb]
@@ -54,15 +62,19 @@ ylabel('position/m'); %[output:38c5b8fb]
 
 multsineResult = struct("input", input, "output", output, "Ts", Ts, ...
     "Tend", Tend, "ms", ms, "periods", periods, ...
+    "Kd", Kd, "set_ff", set_ff, "homing", homing, "pre", pre, "post", post, ...
+    "startCount", startCount, "previousPlantPath", previousPlantPath, ...
+    "sensitivityPeak", sensitivityPeak, ...
+    "measurement_time_raw", measurement_time_raw, "measurement_time", measurement_time, ...
     "measurement_metadata", measurement_metadata, ...
     "measurement_source_path", measurement_source_path);
-f = save_experiment_result(runDir, "multsin_result", multsineResult); %[output:5162568c]
+f = finalize_experiment_result(runDir, "multsin_result", multsineResult); %[output:5162568c]
 %%
 %[text] ### STEP 2: TIME TREATMENT
 %[text] download data
 % load(f);
 % load("multsin_result_2026-07-25_6.mat");
-load(fullfile(projectRoot, "config", "data", "config.mat"), "bop");
+load(fullfile(projectRoot, "config", "data", "config_tunable.mat"), "bop");
 %%
 %[text] remove transient periods
 trans = 3;                      % number of transient periods

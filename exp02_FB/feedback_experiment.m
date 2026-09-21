@@ -2,8 +2,8 @@
 %[text] use PID Controller and compare the performance.
 %%
 clear; close all;
-projectRoot = fileparts(fileparts(mfilename("fullpath")));
-run(fullfile(projectRoot, "config", "config.m"));
+projectRoot = setup_project();
+run(fullfile(projectRoot, "config", "config_tunable.m"));
 load(fullfile(projectRoot, "config", "data", "pana_params.mat"));
 
 %%
@@ -30,9 +30,9 @@ if sampleRateHz == 4e3
 else
     controllerBandwidth = 80;
 end
-Kpid = designpid(Dn/Jn, 0, 1/Jn, controllerBandwidth);
-
-Kd = c2d(Kpid, Ts,  "tustin");
+% Include the measured resonances when tuning the filtered PID.
+[Kd, controllerDesign] = pidtune(Pd, 'PIDF', controllerBandwidth, ...
+    pidtuneOptions('PhaseMargin',60));
 figure; %[output:635e2ffe]
 margin(Pd*Kd); %[output:635e2ffe]
 Smax = 2; % = 6dB
@@ -55,6 +55,10 @@ bodemag(S,bop_s); hold on; %[output:9452a251]
 bodemag(Smax_frd,bop_s,'k--'); %[output:9452a251]
 legend('frd'); %[output:9452a251]
 title("Sensitivity function"); %[output:9452a251]
+nominalClosedLoopStable = isstable(feedback(Pdn*Kd,1));
+sensitivityPeak = max(abs(S.ResponseData),[],'all');
+assert(nominalClosedLoopStable && sensitivityPeak<Smax, ...
+    'NikonMotor:ControllerCheckFailed', 'Check PID stability and sensitivity before operating the stage.');
 %%
 %[text] ### STEP 2: FEEDBACK EXPERIMENT
 %[text] set reference trajectory
@@ -79,45 +83,47 @@ subplot(3,1,1), plot(traj.time, traj.pos),  title('Position'), grid on %[output:
 subplot(3,1,2), plot(traj.time, traj.vel),  title('Velocity'), grid on %[output:0470815b]
 subplot(3,1,3), plot(traj.time, traj.acc),  title('Acceleration'), grid on %[output:0470815b]
 %%
-%[text] build simulink model "twomass\_exp\_2019a.slx" after executing this section
-%[text] Rebuild and redeploy after changing sampleRateHz, the trajectory, or Kd. Set the TwinCAT task to Ts before operating the stage.
+%[text] Reuse the shared tunable model when the sample period and buffer capacity match. The PID coefficients are transferred with the experiment settings.
 set_ff = zeros(N,1);
 set_ref = r;
-open(fullfile(projectRoot, ModelName))
-slbuild(model) %[output:728a5d21] %[output:1f4b209d] %[output:25d51c83]
-builtSamplePeriod = Ts;
-builtModel = ModelName;
-builtAt = datetime("now");
-save(fullfile(projectRoot, "config", "data", "feedback_build_info.mat"), ...
-    "builtSamplePeriod", "builtModel", "builtAt");
+prepare_tunable_trajectory_parameters(set_ref, set_ff, tunable_trajectory_buffer_capacity());
+load_system(fullfile(projectRoot, ModelName));
+buildTarget = false;
+if buildTarget
+    run(fullfile(projectRoot, "exp03_FF", "setup_tunable.m"));
+end
 %%
-%[text] execute experiment via simulink
-%[text] \*make sure to close all simulink files before executing this section
-open(fullfile(projectRoot, ModelName))
-obtainMeasurement; %[output:1459d898]
+%[text] Homing, acquisition and shutdown use the shared tunable model.
+load_system(fullfile(projectRoot, ModelName));
+[~, homing] = home_to_start(54100000);
+run(fullfile(projectRoot, "exp02_FB", "obtainMeasurement.m")); %[output:1459d898]
 t = measurement_time;
 y = measurement(5,:); % output position [m]
 e = measurement(2,:); % tracking error [m]
-r = measurement(3,:);
-u = measurement(4,:); % control input [A]
-v = measurement(6,:);
-torque = measurement(7,:);
+r = measurement(9,:);
+u = measurement(3,:); % total control input [A]
+v = measurement(4,:);
+torque = measurement(6,:); % measured current [A]
 
 figure; plot(diff(y)/Ts) %[output:187f4fb0]
 %%
 %[text] save experiment data
 feedbackResult = struct("t", t, "r", r, "y", y, "e", e, "u", u, ...
     "v", v, "Kd", Kd, "torque", torque, "Ts", Ts, ...
+    "homing", homing, "pre", pre, "post", post, ...
+    "sensitivityPeak", sensitivityPeak, "nominalClosedLoopStable", nominalClosedLoopStable, ...
+    "controllerDesign", controllerDesign, ...
+    "measurement_time_raw", measurement_time_raw, ...
     "plantPath", plantPath, "measurement_metadata", measurement_metadata, ...
     "measurement_source_path", measurement_source_path);
-f = save_experiment_result(runDir, "position_feedback_result", feedbackResult); %[output:group:792bc5e0] %[output:2f6a697e]
+f = finalize_experiment_result(runDir, "position_feedback_result", feedbackResult); %[output:group:792bc5e0] %[output:2f6a697e]
 %%
 %[text] ### STEP 3: Analyze the results of the experiment
 %[text] download data
 load(f);
 assert(exist("Ts", "var") == 1, ...
     "The result file must contain Ts for sample-rate-safe analysis.");
-load(fullfile(projectRoot, "config", "data", "config.mat"), "bop");
+load(fullfile(projectRoot, "config", "data", "config_tunable.mat"), "bop");
 %%
 %[text] plot tracking result of feedback control
 figure; %[output:341395e5]

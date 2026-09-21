@@ -4,7 +4,8 @@ function [measurement, measurementTimeRaw, measurementTime, matPath, metadata] =
 %
 % The File Writer timestamp is Simulink logical task time, not wall-clock or
 % EtherCAT distributed-clock time. Supported layouts are position-feedback
-% v2/v3 and the ten-signal feedforward v1 layout.
+% v2/v3, feedforward v1, and feedforward + axis snapshot v2. For the latter,
+% measurement remains the conventional ten rows; metadata.axisLog has the axes.
 
 if nargin < 1 || strlength(string(dataDir)) == 0
     dataDir = fullfile(fileparts(fileparts(mfilename('fullpath'))), "simulink", "data");
@@ -106,6 +107,14 @@ metadata.source_path = matPath;
 metadata.sample_count = uint32(sampleCount);
 metadata.signal_count = uint16(signalCount);
 metadata.time_is_wall_clock = false;
+metadata.measurement_time_raw = measurementTimeRaw;
+metadata.measurement_time = measurementTime;
+if signalCount == 30
+    metadata.axisLog = decode_axis_snapshot(measurement(11:30,:),samplePeriod);
+    metadata.axisLog.time = measurementTime(:);
+    measurement = measurement(1:10,:);
+end
+metadata.measurement_signal_count = uint16(size(measurement,1));
 end
 
 function [schemaVersion, schemaName, signalNames] = localSchema(signalCount)
@@ -153,11 +162,19 @@ switch signalCount
         schemaVersion = uint16(3);
         schemaName = "position_feedback_v3";
         signalNames = [legacyNames, diagnosticNames];
+    case 30
+        schemaVersion = uint16(2);
+        schemaName = "feedforward_axis_v2";
+        signalNames = [feedforwardNames, ...
+            "axis_cycle", "axis_position_raw_count", "axis_velocity_raw_count", ...
+            "axis_virtual_torque_count", "axis_target_current_count_"+(1:4), ...
+            "axis_actual_current_count_"+(1:4), "axis_statusword_"+(1:4), ...
+            "axis_fault_id", "axis_io_ready", "axis_period_100ns", "axis_request_id"];
     otherwise
         error("NikonMotor:UnsupportedMeasurementWidth", ...
             "tc_yout.data contains %d rows. Supported layouts are " + ...
             "feedforward v1 (10 rows), position-feedback v2 (7 rows), " + ...
-            "and position-feedback v3 (17 rows).", signalCount);
+            "position-feedback v3 (17 rows), and feedforward axis v2 (30 rows).", signalCount);
 end
 end
 
@@ -173,4 +190,7 @@ metadata.source_path = "";
 metadata.sample_count = uint32(0);
 metadata.signal_count = uint16(0);
 metadata.time_is_wall_clock = false;
+metadata.measurement_time_raw = [];
+metadata.measurement_time = [];
+metadata.measurement_signal_count = uint16(0);
 end

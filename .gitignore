@@ -1,4 +1,5 @@
 # Autosave files
+.codex-temp/
 *.asv
 *.m~
 *.autosave
@@ -38,9 +39,6 @@ codegen/
 # SimBiology backup files
 *.sbproj.backup
 *.sbproj.bak
-
-# Local experiment captures
-/data/ff/integration_*/
 
 # TwinCAT generated files
 .vs/

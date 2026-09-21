@@ -3,10 +3,9 @@ function paths = save_experiment_figures(runDir, figures)
 figures = figures(isgraphics(figures,'figure'));
 paths = strings(numel(figures),1);
 if isempty(figures), return; end
-folder = fullfile(runDir,'figures');
-if ~isfolder(folder), mkdir(folder); end
+if ~isfolder(runDir), mkdir(runDir); end
 for k = 1:numel(figures)
-    paths(k) = string(fullfile(folder,sprintf('figure_%d.png',figures(k).Number)));
+    paths(k) = string(fullfile(runDir,sprintf('figure_%d.png',figures(k).Number)));
     exportgraphics(figures(k),paths(k));
 end
 end

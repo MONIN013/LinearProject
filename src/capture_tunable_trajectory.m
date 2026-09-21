@@ -1,9 +1,11 @@
-function [measurement, runDir] = capture_tunable_trajectory(ModelName, r, f, Ts, runDir)
+function [measurement, runDir, metadata] = capture_tunable_trajectory(ModelName, r, f, Ts, runDir, allocationRequestId)
 %CAPTURE_TUNABLE_TRAJECTORY Run one trajectory using the deployed tunable model.
 % The caller prepares controller parameters. Raw parts are retained in runDir/raw.
 if nargin < 5 || isempty(runDir)
     runDir = create_run_directory('data/ff','trajectory');
 end
+if nargin < 6, allocationRequestId = uint32(0); end
+validateattributes(allocationRequestId,{'uint32'},{'scalar'});
 [~, model] = fileparts(ModelName);
 model = string(model);
 projectRoot = fileparts(fileparts(mfilename("fullpath")));
@@ -16,25 +18,32 @@ Simulink.fileGenControl("set", ...
     "CodeGenFolder", fullfile(projectRoot, "CodeGen"), "createDir", true);
 dataDir = fullfile(projectRoot, "simulink", "data");
 assert_target_built(projectRoot, "tunable_build_info.mat", Ts);
-set_param(model, "SimulationMode", "external");
+% Select the deployed common module explicitly; empty arguments open a dialog
+% on every connection, including each exp05 trial.
+set_param(model, "SimulationMode", "external", ...
+    "ExtModeMexArgs", "'192.168.10.3.1.1' 0 16842784"); % Object3, 0x01010020
 bufferCapacity = get_buffer_capacity(model);
 resetValues = prepare_tunable_trajectory_parameters( ...
     zeros(N, 1), zeros(N, 1), bufferCapacity);
 resetValues.p_active = 0;
 resetValues.p_servo = 0;
 resetValues.p_count = 0;
+resetValues.p_allocation_request_id = uint32(0);
+feedback = fixed_feedback_coefficients(evalin('base','Kd'),Ts);
+resetValues.p_fb_num = feedback.p_fb_num;
+resetValues.p_fb_den = feedback.p_fb_den;
 setvars(model, resetValues);
 
-archive_measurement_parts(dataDir);
+archive_measurement_parts(dataDir,runDir,fullfile('raw','previous'));
 clear measurement
 
 %% Connect and run
-measurement = run_feedforward_capture( ...
-    model, N, r, f, Tend, dataDir, Ts, bufferCapacity, runDir);
+[measurement, metadata] = run_feedforward_capture( ...
+    model, N, r, f, Tend, dataDir, Ts, bufferCapacity, runDir, allocationRequestId);
 end
 
-function measurement = run_feedforward_capture( ...
-        model, N, r, f, Tend, dataDir, Ts, bufferCapacity, runDir)
+function [measurement, metadata] = run_feedforward_capture( ...
+        model, N, r, f, Tend, dataDir, Ts, bufferCapacity, runDir, allocationRequestId)
 % A function scope guarantees cleanup when capture errors or is interrupted.
 % Capture arguments by value: nested cleanup functions can lose shared
 % variables while MATLAB destroys the parent workspace.
@@ -49,6 +58,9 @@ wait_for_model_state(model, "ExtModeConnected", "on", 10);
 set_param(model, "SimulationCommand", "start");
 startSettlingTime = 3;
 pause(startSettlingTime);
+assert(string(get_param(model,"ExtModeConnected"))=="on" && ...
+    string(get_param(model,"SimulationStatus"))=="external", ...
+    'NikonMotor:ExternalModeDisconnected','External Mode disconnected during startup.');
 setvars(model, struct("p_active", 1));
 pause(0.1);
 setvars(model, struct("p_active", 0));
@@ -56,6 +68,7 @@ pause(0.1);
 
 runValues = prepare_tunable_trajectory_parameters(r, f, bufferCapacity);
 runValues.p_servo = 0;
+runValues.p_allocation_request_id = allocationRequestId;
 setvars(model, runValues);
 setvars(model, struct("p_servo", 1));
 servoSettlingTime = 3;
@@ -71,9 +84,9 @@ if isempty(measurement)
     error("NikonMotor:MeasurementNotFound", ...
         "The feedforward experiment completed without a measurement file.");
 end
-if metadata.schema_name ~= "feedforward_v1"
+if ~any(metadata.schema_name == ["feedforward_v1","feedforward_axis_v2"])
     error("NikonMotor:UnexpectedMeasurementSchema", ...
-        "Expected feedforward_v1 measurement data, but loaded %s.", ...
+        "Expected a feedforward measurement, but loaded %s.", ...
         metadata.schema_name);
 end
 if metadata.timestamp_source ~= "tc_yout.logical_time"
@@ -81,6 +94,9 @@ if metadata.timestamp_source ~= "tc_yout.logical_time"
         "TwinCAT logical timestamps are required for an experiment capture.");
 end
 archive_measurement_parts(dataDir,runDir);
+[~,sourceName,sourceExtension] = fileparts(metadata.source_path);
+metadata.target_source_path = metadata.source_path;
+metadata.source_path = string(fullfile(runDir,'raw',sourceName+sourceExtension));
 cancel(cleanupGuard);
 end
 
@@ -143,6 +159,9 @@ function reset_and_disconnect(model, N, bufferCapacity)
 try
     setvars(model, struct("p_active", 0, "p_servo", 0));
     pause(0.1);
+    % motor_config propagates servo OFF through a separate TcCOM context.
+    % Retain the request until that command has reached MotorRuntime.
+    setvars(model, struct("p_allocation_request_id",uint32(0)));
     % Complete an interrupted reference without recording an extra sample.
     % ref_finished is held by the generated disabled subsystem, so merely
     % setting p_active=0 does not close its file or rebase the next trial.
@@ -166,6 +185,7 @@ try
         zeros(N, 1), zeros(N, 1), bufferCapacity);
     values.p_active = 0;
     values.p_servo = 0;
+    values.p_allocation_request_id = uint32(0);
     setvars(model, values);
 catch cause
     warning("NikonMotor:ResetFailed", "Experiment reset failed: %s", cause.message);

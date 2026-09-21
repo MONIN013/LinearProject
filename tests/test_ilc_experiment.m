@@ -22,9 +22,9 @@ verifySubstring(testCase, source, ...
     "fullfile(projectRoot, ""exp04_ILC"", ""obtainMeasurement.m"")");
 verifySubstring(testCase, source, ...
     "projectRoot = fileparts(fileparts(mfilename(""fullpath"")))");
-verifySubstring(testCase, source, "open(fullfile(projectRoot, ModelName))");
+verifySubstring(testCase, source, "load_system(fullfile(projectRoot, ModelName))");
 verifySubstring(testCase, source, "create_run_directory(fullfile(projectRoot, ""data"", ""ilc"")");
-verifySubstring(testCase, source, "save_experiment_result(ilcRunDir");
+verifySubstring(testCase, source, "finalize_experiment_result(ilcRunDir");
 verifySubstring(testCase, source, ...
     "save_experiment_figures(ilcRunDir, resultFigures)");
 verifySubstring(testCase, captureSource, ...
@@ -39,7 +39,7 @@ verifySubstring(testCase, captureSource, "max(0.9^iteration, 0.3)");
 verifySubstring(testCase, source, "Fc = 420");
 verifySubstring(testCase, source, "[Qsos, Qscale] = zp2sos(Qz, Qp, Qgain)");
 verifySubstring(testCase, captureSource, "filtfilt_clean(Qsos, Qscale");
-verifySubstring(testCase, captureSource, "max(abs(fNext)) > 2*MAX_INPUT");
+verifySubstring(testCase, captureSource, "max(abs(history.u(:,iteration)))<=MAX_INPUT+1e-6");
 verifySubstring(testCase, source, "confirmEachTrial = false");
 verifySubstring(testCase, captureSource, "questdlg( ...");
 verifySubstring(testCase, captureSource, ...
@@ -58,9 +58,9 @@ verifyEqual(testCase, count(string(captureSource), connectCall), 1);
 verifyEqual(testCase, count(string(captureSource), disconnectCall), 1);
 verifyEqual(testCase, count(string(captureSource), startCall), 1);
 verifyLessThan(testCase, strfind(captureSource, connectCall), ...
-    strfind(captureSource, "for iteration = 1:Ntrial"));
+    strfind(captureSource, "for iteration = firstTrial:Ntrial"));
 verifyLessThan(testCase, strfind(captureSource, startCall), ...
-    strfind(captureSource, "for iteration = 1:Ntrial"));
+    strfind(captureSource, "for iteration = firstTrial:Ntrial"));
 verifySubstring(testCase, captureSource, "cleanupGuard = onCleanup");
 verifySubstring(testCase, captureSource, "[~, modelName] = fileparts(ModelName)");
 verifySubstring(testCase, captureSource, "string(modelName)");
@@ -90,8 +90,8 @@ verifySubstring(testCase, source, "v_max_list = 0.1:0.1:2.0");
 verifySubstring(testCase, source, "feedbackFlag = 1");
 verifySubstring(testCase, source, "velocitySweepEnabled = true");
 verifySubstring(testCase, source, ...
-    "projectRoot = fileparts(fileparts(mfilename(""fullpath"")))");
-verifySubstring(testCase, source, "open(fullfile(projectRoot, ModelName))");
+    "projectRoot = setup_project()");
+verifySubstring(testCase, source, "load_system(fullfile(projectRoot, ModelName))");
 measurementRun = ...
     "fullfile(projectRoot, ""exp04_ILC"", ""obtainMeasurement.m"")";
 verifyEqual(testCase, count(string(source), measurementRun), 1);

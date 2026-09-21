@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="GVL_AllocationTransfer" Id="{730c3048-4b78-4b50-969c-6d1127c00602}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+    SCHEMA_VERSION : UDINT := 2;
+    SAMPLE_BYTES : UDINT := 80;
+END_VAR
+VAR_GLOBAL
+    // Write parameters first, RequestId last. They are latched only at idle.
+    RequestId : UDINT;
+    RequestedEnabled : BOOL;
+    RequestedPair : UINT := 1;
+    RequestedBeta : LREAL;
+    RequestedRatio : LREAL := 1.0;
+    AckId : UDINT;
+    RejectId : UDINT;
+    Active : BOOL;
+    Started : BOOL;
+    Complete : BOOL;
+    Pair : UINT;
+    Beta : LREAL;
+    Ratio : LREAL;
+    Weights : ARRAY [1..2] OF LREAL := [1.0,1.0];
+    FaultId : UDINT;
+    // One coherent cycle is recorded by the common Simulink File Writer.
+    Snapshot AT %Q* : DUT_AllocationSample;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

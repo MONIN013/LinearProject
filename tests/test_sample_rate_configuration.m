@@ -31,8 +31,8 @@ for k = 1:size(cases, 1)
     verifyLessThanOrEqual(testCase, ...
         max(abs(sensitivity.ResponseData), [], "all"), 2);
 
-    pid = designpid(plant.Dn/plant.Jn, 0, 1/plant.Jn, cases{k, 3});
-    discretePid = c2d(pid, cases{k, 2}, "tustin");
+    discretePid = pidtune(plant.Pd,'PIDF',cases{k,3},pidtuneOptions('PhaseMargin',60));
+    verifyTrue(testCase,isstable(feedback(discreteNominal.modelDelayed*discretePid,1)));
     pidSensitivity = feedback(1, plant.Pd*discretePid);
     verifyLessThanOrEqual(testCase, ...
         max(abs(pidSensitivity.ResponseData), [], "all"), 2);
