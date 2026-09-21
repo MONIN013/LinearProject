@@ -1,0 +1,30 @@
+{
+  "pair_hold_exact": true,
+  "common_alpha_mean_max_error": 4.440892098500626e-16,
+  "identical_gate": 1.0,
+  "opposite_gate": 0.0,
+  "zero_gate": 0.0,
+  "contraction_screen": {
+    "clean": {
+      "0.3": 0.7000000063314381,
+      "0.9": 0.10000007518535607
+    },
+    "independent_noise": {
+      "0.3": 0.7000000063314381,
+      "0.9": 0.10000007518535607
+    },
+    "model_mismatch": {
+      "0.3": 0.7798560430501812,
+      "0.9": 0.48960803627675875
+    },
+    "drift": {
+      "0.3": 0.7000000063314381,
+      "0.9": 0.10000007518535607
+    },
+    "correlated_noise": {
+      "0.3": 0.7000000063314381,
+      "0.9": 0.10000007518535607
+    }
+  },
+  "clean_pair_mean_vs_confidence_max_A": 0.0
+}
